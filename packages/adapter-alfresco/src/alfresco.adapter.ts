@@ -25,7 +25,8 @@ export class AlfrescoAdapter implements HostAdapter {
     await page.goto('/share/page/');
     await page.fill('input[name="username"]', user.username);
     await page.fill('input[name="password"]', user.password);
-    await page.click('button[type="submit"]');
+    // The Sign In button is overridden by a YUI script, so we just submit the form
+    await page.press('input[name="password"]', 'Enter');
     await page.waitForURL(/dashboard/, { timeout: 30_000 });
   }
 

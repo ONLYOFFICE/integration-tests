@@ -3,17 +3,22 @@ import { expect, test } from '../fixtures';
 
 test('typed text is saved to the host system @smoke', async ({ adapter, createFile, openEditor, page }) => {
   const file = await createFile('docx');
-  const marker = `autotest-${Date.now()}`;
-  const baseline = await adapter.getModifiedAt(file);
+  // Capitalized: the editor's autocorrect capitalizes the start of a sentence
+  const marker = `Autotest-${Date.now()}`;
 
   const editor = await openEditor(file);
   await editor.typeText(marker);
   await editor.save();
   // Closing the tab ends the editing session —
   // Document Server sends a callback, and the plugin saves the file
+  // The modified date is unreliable (it changes on open already due to the lock aspect),
+  // so we wait for the text to appear in the file content itself.
   await page.close();
 
-  await adapter.waitForSave(file, baseline);
-  const text = await extractDocxText(await adapter.downloadFile(file));
-  expect(text).toContain(marker);
+  await expect
+    .poll(async () => extractDocxText(await adapter.downloadFile(file)), {
+      timeout: 120_000,
+      intervals: [2_000],
+    })
+    .toContain(marker);
 });
