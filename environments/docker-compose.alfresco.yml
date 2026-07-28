@@ -9,7 +9,7 @@
 #
 services:
   alfresco:
-    image: docker.io/alfresco/alfresco-content-repository-community:26.1.0
+    image: docker.io/alfresco/alfresco-content-repository-community:${ALFRESCO_VERSION:-26.1.0}
     mem_limit: 1900m
     environment:
       JAVA_TOOL_OPTIONS: >-
@@ -33,9 +33,9 @@ services:
         -Dsolr.sharedSecret=secret
         -Dsolr.base.url=/solr
         -Dindex.subsystem.name=solr6
-        -Dshare.host=localhost
+        -Dshare.host=${ALFRESCO_HOST:-localhost}
         -Dshare.port=8080
-        -Dalfresco.host=localhost
+        -Dalfresco.host=${ALFRESCO_HOST:-localhost}
         -Dalfresco.port=8080
         -Dcsrf.filter.enabled=false
         -Daos.baseUrlOverwrite=http://localhost:8080/alfresco/aos
@@ -54,6 +54,7 @@ services:
       start_period: 1m
     volumes:
       - /usr/local/tomcat/alf_data
+      - ./amps/onlyoffice-integration-repo.amp:/usr/local/tomcat/amps/onlyoffice-integration-repo.amp:ro
     extends:
       file: commons/base.yaml
       service: alfresco
@@ -76,17 +77,19 @@ services:
       activemq:
         condition: service_healthy
   share:
-    image: docker.io/alfresco/alfresco-share:26.1.0
+    image: docker.io/alfresco/alfresco-share:${ALFRESCO_VERSION:-26.1.0}
     mem_limit: 1g
+    volumes:
+      - ./amps/onlyoffice-integration-share.amp:/usr/local/tomcat/amps_share/onlyoffice-integration-share.amp:ro
     environment:
-      CSRF_FILTER_ORIGIN: http://localhost:8080
-      CSRF_FILTER_REFERER: http://localhost:8080/share/.*
+      CSRF_FILTER_ORIGIN: http://${ALFRESCO_HOST:-localhost}:8080
+      CSRF_FILTER_REFERER: http://${ALFRESCO_HOST:-localhost}:8080/share/.*
       REPO_HOST: "alfresco"
       REPO_PORT: "8080"
       JAVA_OPTS: >-
         -XX:MinRAMPercentage=50
         -XX:MaxRAMPercentage=80
-        -Dalfresco.host=localhost
+        -Dalfresco.host=${ALFRESCO_HOST:-localhost}
         -Dalfresco.port=8080
         -Dalfresco.context=alfresco
         -Dalfresco.protocol=http

@@ -66,4 +66,46 @@ export class AlfrescoAdapter implements HostAdapter {
   async deleteFile(file: FileRef): Promise<void> {
     await this.api.deleteNode(file.id);
   }
+
+  /**
+   * Writes the Document Server URL and JWT secret into the onlyoffice-alfresco
+   * plugin settings and verifies the connection via the plugin's built-in validation.
+   */
+  async configureDocumentServer(documentServerUrl: string, jwtSecret: string): Promise<void> {
+    await this.api.postWebScript('/onlyoffice/onlyoffice-config', {
+      lossyEdit: ['csv', 'otp', 'ott', 'ots', 'txt', 'odp', 'odt', 'ods'],
+      url: documentServerUrl,
+      innerUrl: '',
+      productInnerUrl: '',
+      security: { key: jwtSecret, header: '' },
+      ignoreSSLCertificate: 'false',
+      demo: 'false',
+      customization: {
+        forcesave: 'false',
+        feedback: 'false',
+        chat: 'true',
+        help: 'true',
+        compactHeader: 'false',
+        review: { reviewDisplay: 'original' },
+      },
+      minorVersion: 'false',
+      convertOriginal: 'false',
+      webpreview: 'false',
+    });
+
+    await this.validateDocumentServer();
+  }
+
+  /** Plugin's built-in check: DS availability, command and convert services (including JWT) */
+  async validateDocumentServer(): Promise<void> {
+    const { validationResults } = await this.api.getWebScript<{
+      validationResults: Record<string, { status: string; message?: string }>;
+    }>('/onlyoffice/onlyoffice-config-validation');
+
+    const failed = Object.entries(validationResults).filter(([, r]) => r.status !== 'success');
+    if (failed.length > 0) {
+      const details = failed.map(([name, r]) => `${name}: ${r.message ?? r.status}`).join('; ');
+      throw new Error(`ONLYOFFICE plugin failed to connect to Document Server — ${details}`);
+    }
+  }
 }

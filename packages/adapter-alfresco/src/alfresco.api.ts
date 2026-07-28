@@ -6,12 +6,15 @@ interface NodeEntry {
   modifiedAt: string;
 }
 
-/** Client for the Alfresco Content Services REST API v1 */
+/** Alfresco Content Services REST API v1 client */
 export class AlfrescoApi {
   private readonly apiRoot: string;
+  private readonly scriptRoot: string;
 
   constructor(baseUrl: string, private readonly user: TestUser) {
-    this.apiRoot = `${baseUrl.replace(/\/$/, '')}/alfresco/api/-default-/public/alfresco/versions/1`;
+    const root = baseUrl.replace(/\/$/, '');
+    this.apiRoot = `${root}/alfresco/api/-default-/public/alfresco/versions/1`;
+    this.scriptRoot = `${root}/alfresco/s`;
   }
 
   private get authHeader(): Record<string, string> {
@@ -29,6 +32,27 @@ export class AlfrescoApi {
       throw new Error(`Alfresco API ${init?.method ?? 'GET'} ${apiPath}: ${response.status} ${body}`);
     }
     return response;
+  }
+
+  /** GET request to a webscript (/alfresco/s/...) with JSON parsing */
+  async getWebScript<T>(scriptPath: string): Promise<T> {
+    const response = await fetch(`${this.scriptRoot}${scriptPath}`, { headers: this.authHeader });
+    if (!response.ok) {
+      throw new Error(`Alfresco webscript GET ${scriptPath}: ${response.status} ${await response.text().catch(() => '')}`);
+    }
+    return (await response.json()) as T;
+  }
+
+  /** POST JSON to a webscript (/alfresco/s/...) */
+  async postWebScript(scriptPath: string, body: unknown): Promise<void> {
+    const response = await fetch(`${this.scriptRoot}${scriptPath}`, {
+      method: 'POST',
+      headers: { ...this.authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`Alfresco webscript POST ${scriptPath}: ${response.status} ${await response.text().catch(() => '')}`);
+    }
   }
 
   /** Uploads a file; parentId '-my-' is the user's home folder (My Files in Share) */
