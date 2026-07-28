@@ -1,0 +1,20 @@
+{
+  "name": "onlyoffice-integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "E2E tests for ONLYOFFICE integration plugins (Alfresco, Confluence, ...)",
+  "scripts": {
+    "test": "playwright test",
+    "test:alfresco": "playwright test --project=alfresco",
+    "test:smoke": "playwright test --grep @smoke",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "jszip": "^3.10.1",
+    "typescript": "^5.6.0"
+  }
+}
