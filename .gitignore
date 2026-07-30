@@ -3,3 +3,4 @@ test-results/
 playwright-report/
 .env
 environments/*/artifacts/*.amp
+environments/*/artifacts/*.jar

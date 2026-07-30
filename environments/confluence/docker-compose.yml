@@ -13,6 +13,14 @@ services:
             ATL_JDBC_USER: confluence
             ATL_JDBC_PASSWORD: confluence
             ATL_LICENSE_KEY: ${CONFLUENCE_LICENSE_KEY}
+            # Makes Tomcat report this host/port for every request (regardless of the Host header
+            # actually used to reach it), so Confluence auto-detects and stores this as its site
+            # base URL during setup — the ONLYOFFICE plugin needs a base URL the Document Server
+            # container can reach back over, not 127.0.0.1 (see tests/setup/confluence.ts)
+            ATL_PROXY_NAME: ${CONFLUENCE_PROXY_NAME}
+            ATL_PROXY_PORT: "8090"
+            ATL_TOMCAT_SCHEME: http
+            ATL_TOMCAT_SECURE: "false"
         ports:
           - '8090:8090'
           - '8091:8091'

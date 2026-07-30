@@ -1,9 +1,82 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { getConfluenceLicenseKey } from './confluence-license';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
 
 const stack = stackFor('confluence');
 const CONFLUENCE_URL = 'http://127.0.0.1:8090'; // not localhost — fetch resolves it to ::1 and hangs
+const ADMIN_USER = process.env.CONFLUENCE_USER ?? 'admin';
+const ADMIN_PASSWORD = process.env.CONFLUENCE_PASSWORD ?? 'admin';
+// atlassian-plugin.xml's "key" attribute — stable across plugin releases (see environments/confluence/artifacts)
+const PLUGIN_KEY = 'onlyoffice.onlyoffice-confluence-plugin';
+
+/**
+ * A cookie-based admin session. Basic Auth is disabled by default on this Confluence version
+ * ("Basic Authentication has been disabled on this instance"), so the UPM/plugin-config calls
+ * below authenticate the same way the browser UI does: log in for a session cookie, then (for
+ * the UPM endpoints only) step up to a "secure administrator session" (websudo).
+ */
+interface AdminSession {
+  request(path: string, init?: RequestInit): Promise<Response>;
+}
+
+function createAdminSession(): AdminSession {
+  let cookie = '';
+  return {
+    async request(path, init = {}) {
+      const response = await fetch(`${CONFLUENCE_URL}${path}`, {
+        ...init,
+        headers: { ...init.headers, Cookie: cookie },
+      });
+      const setCookie = response.headers.getSetCookie();
+      if (setCookie.length) {
+        cookie = setCookie.map((c) => c.split(';')[0]).join('; ');
+      }
+      return response;
+    },
+  };
+}
+
+/** Logs in as the admin user created by the setup wizard, establishing a session cookie */
+async function login(session: AdminSession): Promise<void> {
+  const response = await session.request('/rest/tsv/1.0/authenticate?os_authType=none', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+    body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASSWORD, rememberMe: false, targetUrl: '', captchaId: '' }),
+  });
+  if (!response.ok) {
+    throw new Error(`[confluence] Login failed: HTTP ${response.status} ${await response.text()}`);
+  }
+}
+
+/**
+ * Steps up an already-logged-in session to a "secure administrator session" (websudo) —
+ * required by the UPM REST API (plugin install), same as the "Manage apps" admin page.
+ */
+async function elevateToWebsudo(session: AdminSession): Promise<void> {
+  const destination = '/plugins/servlet/upm';
+  const page = await session.request(`/authenticate.action?destination=${encodeURIComponent(destination)}`);
+  const html = await page.text();
+  const match = html.match(/name="atl_token" value="([^"]+)"/);
+  if (!match) {
+    throw new Error('[confluence] Could not find atl_token on the websudo confirmation page');
+  }
+
+  const response = await session.request('/doauthenticate.action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      atl_token: match[1],
+      password: ADMIN_PASSWORD,
+      authenticate: 'Confirm',
+      destination,
+    }).toString(),
+  });
+  if (!response.ok) {
+    throw new Error(`[confluence] Websudo confirmation failed: HTTP ${response.status}`);
+  }
+}
 
 /**
  * ATL_DB_TYPE/ATL_LICENSE_KEY (see docker-compose.yml) close the DB and license screens —
@@ -107,13 +180,98 @@ async function completeSetupWizard(): Promise<void> {
   }
 }
 
-// TODO: install the ONLYOFFICE plugin and configure it (like alfresco.ts) — next step.
+/**
+ * Installs the plugin jar from environments/confluence/artifacts via the UPM REST API
+ * (CATALINA_OPTS in docker-compose.yml enables unsigned uploads) and waits for it to
+ * become enabled: fetch the upm-token, upload the jar as multipart/form-data, then poll
+ * the plugin's UPM resource until it reports enabled.
+ */
+async function installPlugin(session: AdminSession): Promise<void> {
+  const artifactsDir = path.join(stack.ENV_DIR, 'artifacts');
+  const jarName = fs.readdirSync(artifactsDir).find((name) => name.endsWith('.jar'));
+  if (!jarName) {
+    throw new Error(`[confluence] No plugin .jar found in ${artifactsDir} — see artifacts/README.md`);
+  }
+
+  console.log(`[confluence] Installing plugin ${jarName} via the UPM REST API...`);
+  const tokenResponse = await session.request('/rest/plugins/1.0/');
+  const token = tokenResponse.headers.get('upm-token');
+  if (!token) {
+    throw new Error('[confluence] Could not obtain an upm-token from the UPM REST API');
+  }
+
+  const form = new FormData();
+  form.append('plugin', new Blob([fs.readFileSync(path.join(artifactsDir, jarName))]), jarName);
+  const uploadResponse = await session.request(`/rest/plugins/1.0/?token=${token}`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`[confluence] Plugin upload failed: HTTP ${uploadResponse.status} ${await uploadResponse.text()}`);
+  }
+
+  console.log('[confluence] Waiting for the plugin to become enabled...');
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const pluginResponse = await session.request(`/rest/plugins/1.0/${PLUGIN_KEY}-key`);
+    if (pluginResponse.ok && (await pluginResponse.json()).enabled) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`[confluence] Plugin ${PLUGIN_KEY} did not become enabled within 120s`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
+
+/**
+ * Writes the Document Server URL and JWT secret into the onlyoffice-confluence plugin settings
+ * (POST body matches com.onlyoffice.model.settings.Settings from the bundled docs-integration-sdk)
+ * and checks the connection via the same request's validation results.
+ */
+async function configureDocumentServer(session: AdminSession, ds: DocumentServer): Promise<void> {
+  console.log('[confluence] Configuring the plugin to use the Document Server...');
+
+  // The plugin-key resource can report "enabled" a moment before its servlets are actually
+  // routable, so a 404 right after install means "not registered yet", not "wrong URL" — retry.
+  const deadline = Date.now() + 60_000;
+  let response: Response;
+  for (;;) {
+    response = await session.request('/plugins/servlet/onlyoffice/configure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: ds.url,
+        security: { key: ds.secret },
+        demo: false,
+      }),
+    });
+    if (response.status !== 404 || Date.now() > deadline) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  if (!response.ok) {
+    throw new Error(`[confluence] Failed to configure the plugin: HTTP ${response.status} ${await response.text()}`);
+  }
+
+  const { validationResults } = (await response.json()) as {
+    validationResults: Record<string, { status: string; message?: string }>;
+  };
+  const failed = Object.entries(validationResults).filter(([, r]) => r.status !== 'success');
+  if (failed.length > 0) {
+    const details = failed.map(([name, r]) => `${name}: ${r.message ?? r.status}`).join('; ');
+    throw new Error(`[confluence] ONLYOFFICE plugin failed to connect to Document Server — ${details}`);
+  }
+}
+
 /**
  * Spins up the Confluence stack from environments/confluence (Confluence + Postgres), completes
- * the setup wizard (DB/license — via ATL_* variables, the rest — via POST requests), and waits
- * for it to be ready. The resulting address is passed to the tests via process.env.CONFLUENCE_URL.
+ * the setup wizard (DB/license — via ATL_* variables, the rest — via POST requests), installs the
+ * ONLYOFFICE plugin and points it at the Document Server. The resulting address is passed to the
+ * tests via process.env.CONFLUENCE_URL.
  */
-export async function setup(_ds: DocumentServer): Promise<void> {
+export async function setup(ds: DocumentServer): Promise<void> {
   console.log(
     `[confluence] Starting Confluence ${process.env.CONFLUENCE_VERSION ?? '10.2.14'} (project ${stack.COMPOSE_PROJECT})...`,
   );
@@ -122,6 +280,8 @@ export async function setup(_ds: DocumentServer): Promise<void> {
     env: {
       CONFLUENCE_VERSION: process.env.CONFLUENCE_VERSION ?? '10.2.14',
       CONFLUENCE_LICENSE_KEY: licenseKey,
+      // See docker-compose.yml's ATL_PROXY_NAME — makes Confluence auto-detect this as its base URL
+      CONFLUENCE_PROXY_NAME: ds.host,
     },
   });
 
@@ -136,6 +296,12 @@ export async function setup(_ds: DocumentServer): Promise<void> {
     async (r) => r.ok && (await r.text()).includes('RUNNING'),
     300_000,
   );
+
+  const session = createAdminSession();
+  await login(session);
+  await elevateToWebsudo(session);
+  await installPlugin(session);
+  await configureDocumentServer(session, ds);
 
   process.env.CONFLUENCE_URL = CONFLUENCE_URL;
   console.log('[confluence] Stack ready');
