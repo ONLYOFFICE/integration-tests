@@ -1,11 +1,12 @@
-import { COMPOSE_FILE, COMPOSE_PROJECT, DS_CONTAINER, sh } from './stack';
+import { stopDocumentServer } from './setup/document-server';
+import { selectedSystems, standFor } from './setup/registry';
 
-/** Stops and removes the whole stack (Alfresco stack and Document Server) along with its volumes */
+/** Stops and removes the stack(s) of the system(s) that were spun up, and Document Server */
 export default async function globalTeardown(): Promise<void> {
   console.log('[global.teardown] Removing stack...');
-  sh(`docker compose -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down --volumes --remove-orphans`, {
-    ignoreErrors: true,
-  });
-  sh(`docker rm -f ${DS_CONTAINER}`, { ignoreErrors: true });
+  for (const system of selectedSystems()) {
+    standFor(system).teardown();
+  }
+  stopDocumentServer();
   console.log('[global.teardown] Stack stopped and removed');
 }

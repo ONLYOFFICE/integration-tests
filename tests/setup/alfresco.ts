@@ -1,0 +1,76 @@
+import { AlfrescoAdapter } from '@adapters/alfresco';
+import { stackFor, waitForHttp } from '../stack';
+import type { DocumentServer } from './document-server';
+
+const MMT = '/usr/local/tomcat/alfresco-mmt/alfresco-mmt*.jar';
+
+const stack = stackFor('alfresco');
+const ALFRESCO_CONTAINER = `${stack.COMPOSE_PROJECT}-alfresco-1`;
+const SHARE_CONTAINER = `${stack.COMPOSE_PROJECT}-share-1`;
+
+/**
+ * Spins up the Alfresco stack from environments/alfresco (version — ALFRESCO_VERSION),
+ * installs the plugin's AMP packages and its settings (alfresco-global.properties)
+ * with a restart, and verifies the plugin ↔ Document Server connection.
+ * The resulting address is passed to the tests via process.env.ALFRESCO_URL.
+ */
+export async function setup(ds: DocumentServer): Promise<void> {
+  const alfrescoUrl = `http://${ds.host}:8080`;
+
+  console.log(
+    `[alfresco] Starting Alfresco ${process.env.ALFRESCO_VERSION ?? '26.1.0'} (project ${stack.COMPOSE_PROJECT})...`,
+  );
+  stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} up -d --quiet-pull`, {
+    env: {
+      ALFRESCO_VERSION: process.env.ALFRESCO_VERSION ?? '26.1.0',
+      ALFRESCO_HOST: ds.host,
+    },
+  });
+
+  const readyProbe = `${alfrescoUrl}/alfresco/api/-default-/public/alfresco/versions/1/probes/-ready-`;
+  console.log('[alfresco] Waiting for Alfresco (first start can take a few minutes)...');
+  await waitForHttp('Alfresco', readyProbe, (r) => r.ok, 900_000);
+
+  console.log('[alfresco] Installing plugin AMP packages and restarting alfresco/share...');
+  stack.sh(
+    `docker exec -u root ${ALFRESCO_CONTAINER} bash -c ` +
+      `"java -jar ${MMT} install /usr/local/tomcat/amps/onlyoffice-integration-repo.amp /usr/local/tomcat/webapps/alfresco -nobackup -force"`,
+  );
+  stack.sh(
+    `docker exec -u root ${SHARE_CONTAINER} bash -c ` +
+      `"java -jar ${MMT} install /usr/local/tomcat/amps_share/onlyoffice-integration-share.amp /usr/local/tomcat/webapps/share -nobackup -force"`,
+  );
+  // Plugin settings — via alfresco-global.properties (the documented approach);
+  // they'll be picked up by the same restart that activates the AMP
+  stack.sh(
+    `docker exec -u root ${ALFRESCO_CONTAINER} bash -c ` +
+      `"printf 'onlyoffice.url=%s\\nonlyoffice.security.key=%s\\n' '${ds.url}' '${ds.secret}' ` +
+      `>> /usr/local/tomcat/shared/classes/alfresco-global.properties"`,
+  );
+  stack.sh(`docker restart ${ALFRESCO_CONTAINER} ${SHARE_CONTAINER}`);
+
+  await waitForHttp('Alfresco (after plugin install)', readyProbe, (r) => r.ok, 300_000);
+  await waitForHttp('Share', `${alfrescoUrl}/share/page/`, (r) => r.ok, 300_000);
+
+  console.log('[alfresco] Verifying plugin ↔ Document Server connection...');
+  const adapter = new AlfrescoAdapter({
+    baseUrl: alfrescoUrl,
+    admin: {
+      username: process.env.ALFRESCO_USER ?? 'admin',
+      password: process.env.ALFRESCO_PASSWORD ?? 'admin',
+    },
+  });
+  await adapter.validateDocumentServer();
+
+  // Playwright workers inherit process.env — the address will reach the fixtures
+  process.env.ALFRESCO_URL = alfrescoUrl;
+  console.log('[alfresco] Stack ready');
+}
+
+/** Stops and fully removes the Alfresco stack along with its volumes */
+export function teardown(): void {
+  console.log('[alfresco] Removing stack...');
+  stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} down --volumes --remove-orphans`, {
+    ignoreErrors: true,
+  });
+}
