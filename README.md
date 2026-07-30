@@ -25,27 +25,31 @@ environments/         # stacks, one directory per system (alfresco/, confluence/
 
 `global.setup` before the tests:
 
-1. Spins up the Alfresco stack from `environments/alfresco/docker-compose.yml`
+1. Generates a JWT secret and starts Document Server (`DOCUMENTSERVER_IMAGE`).
+2. Auto-detects the host IP: iterates over the machine's addresses and, via a
+   hairpin check from the DS container, finds the one reachable by the containers
+   (overridable via `TEST_HOST_IP`). The address is passed to the tests via
+   `process.env.ALFRESCO_URL`.
+3. Spins up the Alfresco stack from `environments/alfresco/docker-compose.yml`
    (version — `ALFRESCO_VERSION` from `.env`), compose project `onlyoffice-tests`.
-2. Generates a JWT secret and starts Document Server (`DOCUMENTSERVER_IMAGE`);
-   the same secret and DS address go to the plugin via `JAVA_OPTS`
-   (`-Donlyoffice.url`, `-Donlyoffice.security.key`).
-3. Installs the plugin's AMP packages from `environments/alfresco/artifacts/` into the
-   alfresco/share containers (`alfresco-mmt`) and restarts them.
-4. Verifies the plugin ↔ DS connection via the plugin's built-in validation.
+4. Installs the plugin's AMP packages from `environments/alfresco/artifacts/` into the
+   alfresco/share containers (`alfresco-mmt`), writes the DS address and secret into
+   `alfresco-global.properties`, and restarts them.
+5. Verifies the plugin ↔ DS connection via the plugin's built-in validation.
 
 `global.teardown` after the run: `docker compose down --volumes` + removing
 the DS container — the stack is disposable and clean every time.
 
 The `STACK_MANAGED=false` flag in `.env` disables Docker management — tests
-will run against a stack you've already deployed manually.
+will run against a stack you've already deployed manually, whose address is
+set via `ALFRESCO_URL`.
 
 ## Quick start
 
 ```bash
 npm install
 npx playwright install chromium
-cp .env.example .env        # adjust host IP, versions and images
+cp .env.example .env        # adjust versions and images
 # put plugin AMP builds into environments/alfresco/artifacts/ (see the README there)
 npm run test:alfresco
 npm run report

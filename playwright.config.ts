@@ -23,9 +23,8 @@ export default defineConfig({
     {
       name: 'alfresco',
       testMatch: ['shared/**/*.spec.ts', 'alfresco/**/*.spec.ts'],
-      use: {
-        baseURL: process.env.ALFRESCO_URL ?? 'http://localhost:8080',
-      },
+      // baseURL is set by the fixture from the adapter: the stack address
+      // is only known once global.setup runs (see tests/global.setup.ts)
     },
     // Additional connectors are added the same way:
     // { name: 'confluence', testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'], use: { baseURL: ... } },

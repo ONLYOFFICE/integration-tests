@@ -66,6 +66,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   storageState: ({ workerStorageState }, use) => use(workerStorageState),
 
+  // The stack address is determined in global.setup (process.env.ALFRESCO_URL),
+  // so baseURL is taken from the adapter in the worker, not from playwright.config
+  baseURL: ({ adapter }, use) => use(adapter.baseUrl),
+
   createFile: async ({ adapter }, use) => {
     const created: FileRef[] = [];
     await use(async (type: FileType = 'docx') => {
