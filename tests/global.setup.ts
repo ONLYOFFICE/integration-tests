@@ -31,11 +31,11 @@ function hostIpCandidates(): string[] {
  * from inside the DS container we probe its own healthcheck through every
  * machine address (hairpin: container → host IP → published port → container).
  */
-function detectHostIp(dsPort: string): string {
+function detectHostIp(): string {
   const candidates = hostIpCandidates();
   for (const ip of candidates) {
     const code = sh(
-      `docker exec ${DS_CONTAINER} curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://${ip}:${dsPort}/healthcheck`,
+      `docker exec ${DS_CONTAINER} curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://${ip}/healthcheck`,
       { ignoreErrors: true },
     );
     if (code === '200') {
@@ -65,24 +65,23 @@ export default async function globalSetup(): Promise<void> {
   }
 
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
-  const dsPort = process.env.DOCUMENTSERVER_PORT ?? '80';
   const secret = process.env.ONLYOFFICE_JWT_SECRET || randomBytes(24).toString('hex');
 
-  console.log(`[global.setup] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port ${dsPort})...`);
+  console.log(`[global.setup] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port 80)...`);
   sh(`docker rm -f ${DS_CONTAINER}`, { ignoreErrors: true });
   sh(
-    `docker run -d --name ${DS_CONTAINER} -p ${dsPort}:80 ` +
+    `docker run -d --name ${DS_CONTAINER} -p 80:80 ` +
       `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=Authorization ${dsImage}`,
   );
   await waitForHttp(
     'Document Server',
-    `http://localhost:${dsPort}/healthcheck`,
+    `http://localhost:80/healthcheck`,
     async (r) => r.ok && (await r.text()).trim() === 'true',
     300_000,
   );
 
-  const host = process.env.TEST_HOST_IP || detectHostIp(dsPort);
-  const dsUrl = `http://${host}${dsPort === '80' ? '' : `:${dsPort}`}/`;
+  const host = process.env.TEST_HOST_IP || detectHostIp();
+  const dsUrl = `http://${host}/`;
   const alfrescoUrl = `http://${host}:8080`;
   console.log(`[global.setup] Host IP: ${host} (Alfresco: ${alfrescoUrl}, Document Server: ${dsUrl})`);
 
