@@ -1,16 +1,8 @@
+import { getConfluenceLicenseKey } from './confluence-license';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
 
 const stack = stackFor('confluence');
-
-// Atlassian's public "timebomb" license for testing DC products without an SDK — valid for
-// 3 hours from when Confluence first validates it. That's enough for a single test run.
-// Source (if a fresh one is needed — Atlassian closed self-serve DC trial licenses in 03.2026):
-// https://developer.atlassian.com/platform/marketplace/timebomb-licenses-for-testing-server-apps/#data-center-host-product-licenses
-// Overridable via CONFLUENCE_LICENSE_KEY in .env, if a real license (e.g. a vendor one) becomes available.
-const TIMEBOMB_LICENSE_KEY =
-  'AAABtQ0ODAoPeNp9kV9v0zAUxd/9Ka7EWyWnTmESqxSJNQlbxdJUTbLBgAfXuV0NqR3ZTqHfHjdpYVSCB7/4/jm/e86rR6wh4wdgE2Bsyq6nLITbrIQJC9+SRbdbo8k3lUVjo5CRWCvHhVvwHUZ1y42RdvuOu4ZbK7kKhN4RodUm8D1yj5EzHZJlZ8SWW0y4w+i4lrIrykJyLwUqi+WhxX5fnGdZuornN/fnUvqzlebQzy1f353F04zL5l/qBZo9mnkSzW6vS/qxenhDPzw93dEZCx8HtBeyLyX7mpfiMSqHZkAvurUVRrZOajX8jEajRV7S9/mKLld5UsXlPF/Qqkh9IYoNetYa1gdwW4STEqRK6BoNtEZ/Q+Hg89a59st0PH7WwV/042aYoDhMfA0g0aC0g1paZ+S6c+g3SwtOg+is0zufS0C8IZ5ZcSUuLfNU8Sq9KdOEzj4dEf8XWuG4+X36Cd47WanvSv9QpEgXkX/0ijGSm2eupOW9MQnusdGtv7BE685nk94NX7/M/TKFy/BPJjz4047bJyTBPyH0CqcO2GgDvG2hPgNYku550w1YG954il/X0fxXMC0CFQCRUd9kwqDYeFIFJyQmlQPeMMYDLQIUYpH3kyyXea6e1PzAN2rpSuuUl4M=X02l1';
-
 const CONFLUENCE_URL = 'http://127.0.0.1:8090'; // not localhost — fetch resolves it to ::1 and hangs
 
 /**
@@ -125,10 +117,11 @@ export async function setup(_ds: DocumentServer): Promise<void> {
   console.log(
     `[confluence] Starting Confluence ${process.env.CONFLUENCE_VERSION ?? '10.2.14'} (project ${stack.COMPOSE_PROJECT})...`,
   );
+  const licenseKey = await getConfluenceLicenseKey();
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} up -d --quiet-pull`, {
     env: {
       CONFLUENCE_VERSION: process.env.CONFLUENCE_VERSION ?? '10.2.14',
-      CONFLUENCE_LICENSE_KEY: process.env.CONFLUENCE_LICENSE_KEY ?? TIMEBOMB_LICENSE_KEY,
+      CONFLUENCE_LICENSE_KEY: licenseKey,
     },
   });
 
