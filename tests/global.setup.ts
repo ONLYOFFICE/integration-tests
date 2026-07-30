@@ -6,7 +6,6 @@ import {
   COMPOSE_FILE,
   COMPOSE_PROJECT,
   DS_CONTAINER,
-  isStackManaged,
   sh,
   SHARE_CONTAINER,
   waitForHttp,
@@ -44,7 +43,7 @@ function detectHostIp(): string {
   }
   throw new Error(
     `Could not find a host IP reachable from containers (candidates: ${candidates.join(', ') || 'none'}). ` +
-      'Check the firewall or set the address explicitly via TEST_HOST_IP.',
+      'Check the firewall.',
   );
 }
 
@@ -57,15 +56,8 @@ function detectHostIp(): string {
  * The resulting Alfresco address is passed to the tests via process.env.ALFRESCO_URL.
  */
 export default async function globalSetup(): Promise<void> {
-  if (!isStackManaged()) {
-    if (!process.env.ALFRESCO_URL) {
-      throw new Error('STACK_MANAGED=false requires an explicit ALFRESCO_URL in .env');
-    }
-    return;
-  }
-
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
-  const secret = process.env.ONLYOFFICE_JWT_SECRET || randomBytes(24).toString('hex');
+  const secret = randomBytes(24).toString('hex');
 
   console.log(`[global.setup] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port 80)...`);
   sh(`docker rm -f ${DS_CONTAINER}`, { ignoreErrors: true });
@@ -80,7 +72,7 @@ export default async function globalSetup(): Promise<void> {
     300_000,
   );
 
-  const host = process.env.TEST_HOST_IP || detectHostIp();
+  const host = detectHostIp();
   const dsUrl = `http://${host}/`;
   const alfrescoUrl = `http://${host}:8080`;
   console.log(`[global.setup] Host IP: ${host} (Alfresco: ${alfrescoUrl}, Document Server: ${dsUrl})`);

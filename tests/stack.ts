@@ -24,11 +24,6 @@ export const ALFRESCO_CONTAINER = `${COMPOSE_PROJECT}-alfresco-1`;
 export const SHARE_CONTAINER = `${COMPOSE_PROJECT}-share-1`;
 export const DS_CONTAINER = `${COMPOSE_PROJECT}-ds`;
 
-/** The tests spin up and tear down the stack themselves; STACK_MANAGED=false — the stack is set up manually */
-export function isStackManaged(): boolean {
-  return process.env.STACK_MANAGED !== 'false';
-}
-
 export function sh(command: string, options: { env?: Record<string, string>; ignoreErrors?: boolean } = {}): string {
   try {
     return execSync(command, {

@@ -27,9 +27,8 @@ environments/         # stacks, one directory per system (alfresco/, confluence/
 
 1. Generates a JWT secret and starts Document Server (`DOCUMENTSERVER_IMAGE`).
 2. Auto-detects the host IP: iterates over the machine's addresses and, via a
-   hairpin check from the DS container, finds the one reachable by the containers
-   (overridable via `TEST_HOST_IP`). The address is passed to the tests via
-   `process.env.ALFRESCO_URL`.
+   hairpin check from the DS container, finds the one reachable by the containers.
+   The address is passed to the tests via `process.env.ALFRESCO_URL`.
 3. Spins up the Alfresco stack from `environments/alfresco/docker-compose.yml`
    (version — `ALFRESCO_VERSION` from `.env`). Container names are unique per
    run: `onlyoffice-it-<id>-alfresco-1`, `onlyoffice-it-<id>-ds`, ... — parallel
@@ -41,10 +40,6 @@ environments/         # stacks, one directory per system (alfresco/, confluence/
 
 `global.teardown` after the run: `docker compose down --volumes` + removing
 the DS container — the stack is disposable and clean every time.
-
-The `STACK_MANAGED=false` flag in `.env` disables Docker management — tests
-will run against a stack you've already deployed manually, whose address is
-set via `ALFRESCO_URL`.
 
 ## Quick start
 
