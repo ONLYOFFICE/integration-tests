@@ -3,8 +3,8 @@ import * as path from 'node:path';
 
 /** Compose project with the Alfresco stack managed by global.setup/teardown */
 export const COMPOSE_PROJECT = 'onlyoffice-tests';
-export const COMPOSE_FILE = 'docker-compose.alfresco.yml';
-export const ENV_DIR = path.resolve(__dirname, '..', 'environments');
+export const COMPOSE_FILE = 'docker-compose.yml';
+export const ENV_DIR = path.resolve(__dirname, '..', 'environments', 'alfresco');
 
 export const ALFRESCO_CONTAINER = `${COMPOSE_PROJECT}-alfresco-1`;
 export const SHARE_CONTAINER = `${COMPOSE_PROJECT}-share-1`;

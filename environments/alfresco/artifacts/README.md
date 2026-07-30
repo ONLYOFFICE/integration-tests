@@ -1,4 +1,4 @@
-# AMP packages for the onlyoffice-alfresco plugin
+# onlyoffice-alfresco plugin artifacts
 
 Plugin builds go here; global.setup installs them into the containers before the tests:
 

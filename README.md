@@ -18,19 +18,19 @@ tests/
   stack.ts            # shared stack constants and docker helpers
   shared/             # cross-platform scenarios (run in every project)
   alfresco/           # Alfresco-specific scenarios
-environments/         # stack docker-compose and plugin AMP packages (amps/)
+environments/         # stacks, one directory per system (alfresco/, confluence/, ...)
 ```
 
 ## Stack lifecycle
 
 `global.setup` before the tests:
 
-1. Spins up the Alfresco stack from `environments/docker-compose.alfresco.yml`
+1. Spins up the Alfresco stack from `environments/alfresco/docker-compose.yml`
    (version — `ALFRESCO_VERSION` from `.env`), compose project `onlyoffice-tests`.
 2. Generates a JWT secret and starts Document Server (`DOCUMENTSERVER_IMAGE`);
    the same secret and DS address go to the plugin via `JAVA_OPTS`
    (`-Donlyoffice.url`, `-Donlyoffice.security.key`).
-3. Installs the plugin's AMP packages from `environments/amps/` into the
+3. Installs the plugin's AMP packages from `environments/alfresco/artifacts/` into the
    alfresco/share containers (`alfresco-mmt`) and restarts them.
 4. Verifies the plugin ↔ DS connection via the plugin's built-in validation.
 
@@ -46,7 +46,7 @@ will run against a stack you've already deployed manually.
 npm install
 npx playwright install chromium
 cp .env.example .env        # adjust host IP, versions and images
-# put plugin AMP builds into environments/amps/ (see the README there)
+# put plugin AMP builds into environments/alfresco/artifacts/ (see the README there)
 npm run test:alfresco
 npm run report
 ```
@@ -66,4 +66,4 @@ The first run takes longer: Alfresco's cold start takes a few minutes.
 1. `packages/adapter-<system>/` — implement `HostAdapter`.
 2. `tests/fixtures.ts` — add `registerAdapter('<system>', ...)`.
 3. `playwright.config.ts` — add a project with `testMatch: ['shared/**', '<system>/**']`.
-4. `environments/docker-compose.<system>.yml` — the stack, wire it into `global.setup`.
+4. `environments/<system>/docker-compose.yml` — the stack, wire it into `global.setup`.
