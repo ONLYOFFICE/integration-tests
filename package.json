@@ -8,6 +8,7 @@
     "test:alfresco": "playwright test --project=alfresco",
     "test:smoke": "playwright test --grep @smoke",
     "report": "playwright show-report",
+    "stand:cleanup": "node scripts/cleanup-stands.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

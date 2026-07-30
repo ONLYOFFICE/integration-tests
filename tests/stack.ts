@@ -1,14 +1,28 @@
 import { execSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 
+/**
+ * Unique run identifier (testcontainers-style): isolates container, network,
+ * and volume names across parallel runs. Stored in env so that global.setup
+ * and global.teardown see the same value; can be pinned externally:
+ * OIT_RUN_ID=deadbeef01 npx playwright test.
+ */
+function runId(): string {
+  if (!process.env.OIT_RUN_ID) {
+    process.env.OIT_RUN_ID = randomBytes(5).toString('hex');
+  }
+  return process.env.OIT_RUN_ID;
+}
+
 /** Compose project with the Alfresco stack managed by global.setup/teardown */
-export const COMPOSE_PROJECT = 'onlyoffice-tests';
+export const COMPOSE_PROJECT = `onlyoffice-it-${runId()}`;
 export const COMPOSE_FILE = 'docker-compose.yml';
 export const ENV_DIR = path.resolve(__dirname, '..', 'environments', 'alfresco');
 
 export const ALFRESCO_CONTAINER = `${COMPOSE_PROJECT}-alfresco-1`;
 export const SHARE_CONTAINER = `${COMPOSE_PROJECT}-share-1`;
-export const DS_CONTAINER = process.env.DOCUMENTSERVER_CONTAINER ?? 'onlyoffice-ds-tests';
+export const DS_CONTAINER = `${COMPOSE_PROJECT}-ds`;
 
 /** The tests spin up and tear down the stack themselves; STACK_MANAGED=false — the stack is set up manually */
 export function isStackManaged(): boolean {

@@ -31,7 +31,9 @@ environments/         # stacks, one directory per system (alfresco/, confluence/
    (overridable via `TEST_HOST_IP`). The address is passed to the tests via
    `process.env.ALFRESCO_URL`.
 3. Spins up the Alfresco stack from `environments/alfresco/docker-compose.yml`
-   (version — `ALFRESCO_VERSION` from `.env`), compose project `onlyoffice-tests`.
+   (version — `ALFRESCO_VERSION` from `.env`). Container names are unique per
+   run: `onlyoffice-it-<id>-alfresco-1`, `onlyoffice-it-<id>-ds`, ... — parallel
+   runs don't collide on names (orphaned stacks: `npm run stand:cleanup`).
 4. Installs the plugin's AMP packages from `environments/alfresco/artifacts/` into the
    alfresco/share containers (`alfresco-mmt`), writes the DS address and secret into
    `alfresco-global.properties`, and restarts them.
