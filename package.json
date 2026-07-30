@@ -6,6 +6,7 @@
   "scripts": {
     "test": "playwright test",
     "test:alfresco": "playwright test --project=alfresco",
+    "test:confluence": "playwright test --project=confluence",
     "test:smoke": "playwright test --grep @smoke",
     "report": "playwright show-report",
     "stand:cleanup": "node scripts/cleanup-stands.mjs",

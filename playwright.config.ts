@@ -26,7 +26,10 @@ export default defineConfig({
       // baseURL is set by the fixture from the adapter: the stack address
       // is only known once global.setup runs (see tests/global.setup.ts)
     },
-    // Additional connectors are added the same way:
-    // { name: 'confluence', testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'], use: { baseURL: ... } },
+    {
+      name: 'confluence',
+      // shared/**/*.spec.ts will be added once ConfluenceAdapter exists (see tests/fixtures.ts)
+      testMatch: ['confluence/**/*.spec.ts'],
+    },
   ],
 });

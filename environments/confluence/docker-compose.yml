@@ -1,0 +1,27 @@
+version: '3'
+
+services:
+    confluence:
+        image: atlassian/confluence:${CONFLUENCE_VERSION:-10.2.14}
+        environment:
+            CATALINA_OPTS: "-Dupm.plugin.upload.enabled=true -Datlassian.upm.signature.check.disabled=true"
+        ports:
+          - '8090:8090'
+          - '8091:8091'
+        networks:
+            - atlassian
+      
+    postgres:
+        image: postgres:13.9
+        environment:
+            POSTGRES_DB: confluence
+            POSTGRES_USER: confluence
+            POSTGRES_PASSWORD: confluence
+        ports:
+            - "5432:5432"
+        networks:
+            - atlassian
+
+networks:
+    atlassian:
+        name: atlassian
