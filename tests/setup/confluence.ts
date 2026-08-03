@@ -25,10 +25,13 @@ function createAdminSession(): AdminSession {
   let cookie = '';
   return {
     async request(path, init = {}) {
-      const response = await fetch(`${CONFLUENCE_URL}${path}`, {
-        ...init,
-        headers: { ...init.headers, Cookie: cookie },
-      });
+      const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined), Cookie: cookie };
+      if ((init.method ?? 'GET') !== 'GET') {
+        // Some REST resources (e.g. /rest/api/space) enforce Confluence's XSRF filter even
+        // though others we call (UPM, the plugin's own configure servlet) don't — harmless either way
+        headers['X-Atlassian-Token'] = 'no-check';
+      }
+      const response = await fetch(`${CONFLUENCE_URL}${path}`, { ...init, headers });
       const setCookie = response.headers.getSetCookie();
       if (setCookie.length) {
         cookie = setCookie.map((c) => c.split(';')[0]).join('; ');
@@ -266,6 +269,58 @@ async function configureDocumentServer(session: AdminSession, ds: DocumentServer
 }
 
 /**
+ * Opens the editor once for a throwaway attachment, sequentially, right after the plugin is
+ * configured. Without this, the first real request to /plugins/servlet/onlyoffice/doceditor
+ * races when multiple Playwright workers hit it in parallel (each opening its own file right
+ * after the stand comes up) and one of them gets Confluence's generic "System Error" page —
+ * presumably something the plugin lazily initializes on first use isn't safe for concurrent
+ * first-callers. Doing it once, alone, avoids the race for every test that follows.
+ */
+async function warmUpEditor(session: AdminSession): Promise<void> {
+  console.log('[confluence] Warming up the ONLYOFFICE editor endpoint...');
+
+  const spaceCheck = await session.request('/rest/api/space/WARMUP');
+  if (!spaceCheck.ok) {
+    await session.request('/rest/api/space', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'WARMUP',
+        name: 'Warmup',
+        description: { plain: { value: '', representation: 'plain' } },
+      }),
+    });
+  }
+
+  const pageResponse = await session.request('/rest/api/content', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'page',
+      title: `warmup-${Date.now()}`,
+      space: { key: 'WARMUP' },
+      body: { storage: { value: '<p></p>', representation: 'storage' } },
+    }),
+  });
+  const pageId = ((await pageResponse.json()) as { id: string }).id;
+
+  const form = new FormData();
+  form.append('file', new Blob([Buffer.from('warmup')]), 'warmup.docx');
+  const attachResponse = await session.request(`/rest/api/content/${pageId}/child/attachment`, {
+    method: 'POST',
+    body: form,
+  });
+  const { results } = (await attachResponse.json()) as { results: { id: string }[] };
+
+  const editorResponse = await session.request(`/plugins/servlet/onlyoffice/doceditor?attachmentId=${results[0].id}`);
+  if (!editorResponse.ok) {
+    throw new Error(`[confluence] Editor warm-up request failed: HTTP ${editorResponse.status}`);
+  }
+
+  await session.request(`/rest/api/content/${pageId}`, { method: 'DELETE' });
+}
+
+/**
  * Spins up the Confluence stack from environments/confluence (Confluence + Postgres), completes
  * the setup wizard (DB/license — via ATL_* variables, the rest — via POST requests), installs the
  * ONLYOFFICE plugin and points it at the Document Server. The resulting address is passed to the
@@ -302,8 +357,12 @@ export async function setup(ds: DocumentServer): Promise<void> {
   await elevateToWebsudo(session);
   await installPlugin(session);
   await configureDocumentServer(session, ds);
+  await warmUpEditor(session);
 
-  process.env.CONFLUENCE_URL = CONFLUENCE_URL;
+  // Browser-driven tests must reach Confluence via the same host it now considers its own base
+  // URL (ATL_PROXY_NAME above) — otherwise the login SPA's XSRF/origin check rejects the request
+  // ("Something went wrong") even though the plain REST calls above (no real browser) are fine.
+  process.env.CONFLUENCE_URL = `http://${ds.host}:8090`;
   console.log('[confluence] Stack ready');
 }
 

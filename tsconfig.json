@@ -12,7 +12,8 @@
     "baseUrl": ".",
     "paths": {
       "@core": ["packages/core/src/index.ts"],
-      "@adapters/alfresco": ["packages/adapter-alfresco/src/index.ts"]
+      "@adapters/alfresco": ["packages/adapter-alfresco/src/index.ts"],
+      "@adapters/confluence": ["packages/adapter-confluence/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "tests/**/*.ts", "playwright.config.ts"]

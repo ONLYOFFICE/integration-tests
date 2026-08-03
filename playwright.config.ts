@@ -28,8 +28,7 @@ export default defineConfig({
     },
     {
       name: 'confluence',
-      // shared/**/*.spec.ts will be added once ConfluenceAdapter exists (see tests/fixtures.ts)
-      testMatch: ['confluence/**/*.spec.ts'],
+      testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'],
     },
   ],
 });
