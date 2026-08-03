@@ -54,7 +54,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   const secret = randomBytes(24).toString('hex');
 
   console.log(`[document-server] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port 80)...`);
-  sh(`docker rm -f ${DS_CONTAINER}`, { ignoreErrors: true });
+  sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
   sh(
     `docker run -d --name ${DS_CONTAINER} -p 80:80 ` +
       `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=Authorization ${dsImage}`,
@@ -73,7 +73,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   return { url, secret, host };
 }
 
-/** Stops and removes the Document Server container */
+/** Stops and removes the Document Server container along with its anonymous volumes */
 export function stopDocumentServer(): void {
-  sh(`docker rm -f ${DS_CONTAINER}`, { ignoreErrors: true });
+  sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
 }

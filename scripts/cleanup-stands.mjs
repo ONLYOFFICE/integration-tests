@@ -1,4 +1,4 @@
-// Removes all test stacks (containers and networks prefixed with onlyoffice-it-)
+// Removes all test stacks (containers, networks, and volumes prefixed with onlyoffice-it-)
 // left behind by abnormally interrupted runs.
 import { execSync } from 'node:child_process';
 
@@ -12,7 +12,9 @@ function docker(args) {
 
 const containers = docker('ps -aq --filter "name=^onlyoffice-it-"');
 if (containers) {
-  docker(`rm -f ${containers.split('\n').join(' ')}`);
+  // -v also removes each container's anonymous volumes (e.g. Document Server's) —
+  // without it they silently pile up across interrupted runs
+  docker(`rm -f -v ${containers.split('\n').join(' ')}`);
   console.log(`Removed containers: ${containers.split('\n').length}`);
 } else {
   console.log('No onlyoffice-it-* containers found');
@@ -24,4 +26,10 @@ if (networks) {
   console.log(`Removed networks: ${networks.split('\n').length}`);
 }
 
-// Anonymous stack volumes have no names — cleaned up only via docker volume prune
+const volumes = docker('volume ls -q --filter "name=^onlyoffice-it-"');
+if (volumes) {
+  docker(`volume rm ${volumes.split('\n').join(' ')}`);
+  console.log(`Removed volumes: ${volumes.split('\n').length}`);
+} else {
+  console.log('No onlyoffice-it-* volumes found');
+}
