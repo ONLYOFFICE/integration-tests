@@ -5,6 +5,7 @@ import { ConfluenceApi } from './confluence.api';
 export interface ConfluenceOptions {
   baseUrl: string;
   admin: TestUser;
+  secondUser: TestUser;
 }
 
 // Confluence has no bare "file" content type — every attachment needs a hosting page,
@@ -16,6 +17,7 @@ export class ConfluenceAdapter implements HostAdapter {
   readonly name = 'confluence';
   readonly baseUrl: string;
   readonly defaultUser: TestUser;
+  readonly secondUser: TestUser;
 
   private readonly api: ConfluenceApi;
   private ensureSpacePromise: Promise<void> | null = null;
@@ -23,6 +25,7 @@ export class ConfluenceAdapter implements HostAdapter {
   constructor(options: ConfluenceOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.defaultUser = options.admin;
+    this.secondUser = options.secondUser;
     this.api = new ConfluenceApi(this.baseUrl, options.admin);
   }
 

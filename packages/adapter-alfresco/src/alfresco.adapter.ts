@@ -5,12 +5,14 @@ import { AlfrescoApi } from './alfresco.api';
 export interface AlfrescoOptions {
   baseUrl: string;
   admin: TestUser;
+  secondUser: TestUser;
 }
 
 export class AlfrescoAdapter implements HostAdapter {
   readonly name = 'alfresco';
   readonly baseUrl: string;
   readonly defaultUser: TestUser;
+  readonly secondUser: TestUser;
   readonly editorFrameSelector = 'iframe[name="frameEditor"]';
 
   private readonly api: AlfrescoApi;
@@ -18,6 +20,7 @@ export class AlfrescoAdapter implements HostAdapter {
   constructor(options: AlfrescoOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.defaultUser = options.admin;
+    this.secondUser = options.secondUser;
     this.api = new AlfrescoApi(this.baseUrl, options.admin);
   }
 
@@ -91,6 +94,11 @@ export class AlfrescoAdapter implements HostAdapter {
     });
 
     await this.validateDocumentServer();
+  }
+
+  /** Creates the secondUser account, if it doesn't already exist, as a repository administrator */
+  async ensureSecondUser(): Promise<void> {
+    await this.api.ensurePerson(this.secondUser);
   }
 
   /** Plugin's built-in check: DS availability, command and convert services (including JWT) */

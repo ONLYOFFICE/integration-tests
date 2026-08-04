@@ -11,6 +11,10 @@ registerAdapter('alfresco', () => {
       username: process.env.ALFRESCO_USER ?? 'admin',
       password: process.env.ALFRESCO_PASSWORD ?? 'admin',
     },
+    secondUser: {
+      username: process.env.ALFRESCO_USER2 ?? 'autotest2',
+      password: process.env.ALFRESCO_PASSWORD2 ?? 'automation123',
+    },
   });
 });
 
@@ -20,6 +24,10 @@ registerAdapter('confluence', () => {
     admin: {
       username: process.env.CONFLUENCE_USER ?? 'admin',
       password: process.env.CONFLUENCE_PASSWORD ?? 'admin',
+    },
+    secondUser: {
+      username: process.env.CONFLUENCE_USER2 ?? 'autotest2',
+      password: process.env.CONFLUENCE_PASSWORD2 ?? 'automation123',
     },
   });
 });

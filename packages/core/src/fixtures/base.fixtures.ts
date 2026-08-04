@@ -1,8 +1,8 @@
-import { test as base, expect } from '@playwright/test';
+import { BrowserContext, test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EditorPage } from '../editor/editor.page';
-import { FileRef, FileType, HostAdapter } from '../types';
+import { FileRef, FileType, HostAdapter, TestUser } from '../types';
 
 export type AdapterFactory = () => HostAdapter;
 
@@ -21,6 +21,11 @@ interface TestFixtures {
   createFile: (type?: FileType) => Promise<FileRef>;
   /** Opens the file in the editor and waits for it to fully load */
   openEditor: (file: FileRef) => Promise<EditorPage>;
+  /**
+   * Opens the file in the editor as a given user, in its own independent browser session —
+   * for scenarios that need more than one simultaneous editing session (e.g. co-editing).
+   */
+  openEditorAs: (user: TestUser, file: FileRef) => Promise<EditorPage>;
 }
 
 interface WorkerFixtures {
@@ -90,6 +95,24 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       await adapter.openInEditor(page, file);
       return EditorPage.attach(page, adapter.editorFrameSelector);
     });
+  },
+
+  openEditorAs: async ({ browser, adapter }, use) => {
+    const contexts: BrowserContext[] = [];
+    await use(async (user: TestUser, file: FileRef) => {
+      // browser.newContext() defaults to the test's active `storageState` fixture (the admin
+      // session captured above) unless told otherwise — without this override, the "independent"
+      // session here would silently start out already authenticated as the primary user
+      const context = await browser.newContext({ baseURL: adapter.baseUrl, storageState: undefined });
+      contexts.push(context);
+      const page = await context.newPage();
+      await adapter.login(page, user);
+      await adapter.openInEditor(page, file);
+      return EditorPage.attach(page, adapter.editorFrameSelector);
+    });
+    for (const context of contexts) {
+      await context.close();
+    }
   },
 });
 

@@ -77,4 +77,38 @@ export class AlfrescoApi {
   async deleteNode(id: string): Promise<void> {
     await this.request(`/nodes/${id}`, { method: 'DELETE' });
   }
+
+  private async personExists(id: string): Promise<boolean> {
+    const response = await fetch(`${this.apiRoot}/people/${id}`, { headers: this.authHeader });
+    return response.ok;
+  }
+
+  /**
+   * Creates a person and adds it to GROUP_ALFRESCO_ADMINISTRATORS — administrators bypass
+   * per-node ACLs in Alfresco, so this is the simplest way to give a second test account
+   * access to content created by the admin user (home folders are private by default).
+   */
+  async ensurePerson(user: TestUser): Promise<void> {
+    if (!(await this.personExists(user.username))) {
+      await this.request('/people', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.username,
+          firstName: user.username,
+          lastName: 'Autotest',
+          email: `${user.username}@example.com`,
+          password: user.password,
+          enabled: true,
+        }),
+      });
+    }
+    await this.request('/groups/GROUP_ALFRESCO_ADMINISTRATORS/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: user.username, memberType: 'PERSON' }),
+    }).catch(() => {
+      // already a member — Alfresco returns 409 for a duplicate membership
+    });
+  }
 }

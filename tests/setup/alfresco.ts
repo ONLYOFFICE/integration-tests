@@ -64,8 +64,15 @@ export async function setup(ds: DocumentServer): Promise<void> {
       username: process.env.ALFRESCO_USER ?? 'admin',
       password: process.env.ALFRESCO_PASSWORD ?? 'admin',
     },
+    secondUser: {
+      username: process.env.ALFRESCO_USER2 ?? 'autotest2',
+      password: process.env.ALFRESCO_PASSWORD2 ?? 'automation123',
+    },
   });
   await adapter.validateDocumentServer();
+
+  console.log('[alfresco] Creating the second test account...');
+  await adapter.ensureSecondUser();
 
   // Playwright workers inherit process.env — the address will reach the fixtures
   process.env.ALFRESCO_URL = alfrescoUrl;

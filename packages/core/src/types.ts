@@ -24,6 +24,8 @@ export interface HostAdapter {
   readonly baseUrl: string;
   /** The user used for the default login */
   readonly defaultUser: TestUser;
+  /** A second, independent account — used by scenarios that need two simultaneous editing sessions */
+  readonly secondUser: TestUser;
   /** Selector for the editor iframe on the host system page */
   readonly editorFrameSelector?: string;
 
