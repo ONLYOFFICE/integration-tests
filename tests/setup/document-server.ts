@@ -50,6 +50,14 @@ function detectHostIp(): string {
  * systems' containers. A shared step for all systems — independent of which one is tested.
  */
 export async function startDocumentServer(): Promise<DocumentServer> {
+  if (process.env.DOCUMENTSERVER_URL) {
+    const url = process.env.DOCUMENTSERVER_URL;
+    const secret = process.env.DOCUMENTSERVER_SECRET ?? '';
+    const host = new URL(url).hostname;
+    console.log(`[document-server] Using existing Document Server at ${url} (DOCUMENTSERVER_URL is set) — skipping startup`);
+    return { url, secret, host };
+  }
+
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
   const secret = randomBytes(24).toString('hex');
 
@@ -75,5 +83,8 @@ export async function startDocumentServer(): Promise<DocumentServer> {
 
 /** Stops and removes the Document Server container along with its anonymous volumes */
 export function stopDocumentServer(): void {
+  if (process.env.DOCUMENTSERVER_URL) {
+    return;
+  }
   sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
 }

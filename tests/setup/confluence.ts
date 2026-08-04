@@ -327,6 +327,11 @@ async function warmUpEditor(session: AdminSession): Promise<void> {
  * tests via process.env.CONFLUENCE_URL.
  */
 export async function setup(ds: DocumentServer): Promise<void> {
+  if (process.env.CONFLUENCE_URL) {
+    console.log(`[confluence] Using existing Confluence at ${process.env.CONFLUENCE_URL} (CONFLUENCE_URL is set) — skipping stack setup`);
+    return;
+  }
+
   console.log(
     `[confluence] Starting Confluence ${process.env.CONFLUENCE_VERSION ?? '10.2.14'} (project ${stack.COMPOSE_PROJECT})...`,
   );
@@ -368,6 +373,9 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
 /** Stops and fully removes the Confluence stack along with its volumes */
 export function teardown(): void {
+  if (process.env.CONFLUENCE_URL) {
+    return;
+  }
   console.log('[confluence] Removing stack...');
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} down --volumes --remove-orphans`, {
     ignoreErrors: true,

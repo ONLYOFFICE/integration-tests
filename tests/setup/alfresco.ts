@@ -15,6 +15,11 @@ const SHARE_CONTAINER = `${stack.COMPOSE_PROJECT}-share-1`;
  * The resulting address is passed to the tests via process.env.ALFRESCO_URL.
  */
 export async function setup(ds: DocumentServer): Promise<void> {
+  if (process.env.ALFRESCO_URL) {
+    console.log(`[alfresco] Using existing Alfresco at ${process.env.ALFRESCO_URL} (ALFRESCO_URL is set) — skipping stack setup`);
+    return;
+  }
+
   const alfrescoUrl = `http://${ds.host}:8080`;
 
   console.log(
@@ -69,6 +74,9 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
 /** Stops and fully removes the Alfresco stack along with its volumes */
 export function teardown(): void {
+  if (process.env.ALFRESCO_URL) {
+    return;
+  }
   console.log('[alfresco] Removing stack...');
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} down --volumes --remove-orphans`, {
     ignoreErrors: true,
