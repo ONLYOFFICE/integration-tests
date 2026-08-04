@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { createBlankDocx, FileRef, FileType, HostAdapter, TestUser } from '@core';
+import { FileRef, FileType, HostAdapter, loadTemplate, TestUser } from '@core';
 import { ConfluenceApi } from './confluence.api';
 
 export interface ConfluenceOptions {
@@ -63,14 +63,11 @@ export class ConfluenceAdapter implements HostAdapter {
   }
 
   async createFile(name: string, type: FileType): Promise<FileRef> {
-    if (type !== 'docx') {
-      throw new Error(`Type "${type}" is not supported yet — add a template generator in packages/core/src/verify`);
-    }
     await this.ensureTestSpace();
 
     const fileName = `${name}.${type}`;
     const pageId = await this.api.createPage(TEST_SPACE_KEY, name);
-    const attachment = await this.api.uploadAttachment(pageId, fileName, await createBlankDocx());
+    const attachment = await this.api.uploadAttachment(pageId, fileName, loadTemplate(type));
     return { id: `${pageId}:${attachment.id}`, name: fileName, type };
   }
 
