@@ -81,6 +81,12 @@ export async function setup(ds: DocumentServer): Promise<void> {
   });
   await adapter.validateDocumentServer();
 
+  // Force Save is off by default — without it, pressing Save in an open editing session has
+  // nothing to persist until the session (tab) closes, which is what the force-save scenario
+  // specifically needs to tell apart from the regular close-triggered save.
+  console.log('[alfresco] Enabling Force Save...');
+  await adapter.configureDocumentServer(ds.url, ds.secret, true);
+
   console.log('[alfresco] Creating the second test account...');
   await adapter.ensureSecondUser();
 

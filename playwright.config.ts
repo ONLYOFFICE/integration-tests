@@ -29,6 +29,7 @@ export default defineConfig({
     {
       name: 'confluence',
       testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts'],
     },
   ],
 });

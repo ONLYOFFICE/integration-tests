@@ -105,7 +105,7 @@ export class AlfrescoAdapter implements HostAdapter {
    * Writes the Document Server URL and JWT secret into the onlyoffice-alfresco
    * plugin settings and verifies the connection via the plugin's built-in validation.
    */
-  async configureDocumentServer(documentServerUrl: string, jwtSecret: string): Promise<void> {
+  async configureDocumentServer(documentServerUrl: string, jwtSecret: string, forceSave = false): Promise<void> {
     await this.api.postWebScript('/onlyoffice/onlyoffice-config', {
       lossyEdit: ['csv', 'otp', 'ott', 'ots', 'txt', 'odp', 'odt', 'ods'],
       url: documentServerUrl,
@@ -115,7 +115,7 @@ export class AlfrescoAdapter implements HostAdapter {
       ignoreSSLCertificate: 'false',
       demo: 'false',
       customization: {
-        forcesave: 'false',
+        forcesave: forceSave ? 'true' : 'false',
         feedback: 'false',
         chat: 'true',
         help: 'true',
