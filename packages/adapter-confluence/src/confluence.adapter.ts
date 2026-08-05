@@ -83,6 +83,24 @@ export class ConfluenceAdapter implements HostAdapter {
     await page.goto(`/plugins/servlet/onlyoffice/doceditor?attachmentId=${attachmentId}`);
   }
 
+  /**
+   * Drives the same request the plugin's on-page "Create new document" dialog submits
+   * (dialog-filecreate.soy: a GET form to doceditor with fileName/fileExt/pageId) — the plugin
+   * creates a blank attachment on the page and renders the editor for it directly.
+   */
+  async createFileViaPlugin(page: Page, type: FileType): Promise<FileRef> {
+    await this.ensureTestSpace();
+    const name = `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const pageId = await this.api.createPage(TEST_SPACE_KEY, name);
+
+    await page.goto(
+      `/plugins/servlet/onlyoffice/doceditor?pageId=${pageId}&fileExt=${type}&fileName=${encodeURIComponent(name)}`,
+    );
+
+    const attachment = await this.api.getSoleAttachment(pageId);
+    return { id: `${pageId}:${attachment.id}`, name: attachment.name, type };
+  }
+
   async downloadFile(file: FileRef): Promise<Buffer> {
     const { attachmentId } = this.parseId(file.id);
     const { downloadUrl } = await this.api.getAttachment(attachmentId);

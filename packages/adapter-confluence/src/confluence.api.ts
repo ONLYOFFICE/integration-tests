@@ -150,6 +150,16 @@ export class ConfluenceApi {
     return this.toAttachmentInfo((await response.json()) as RawContent);
   }
 
+  /** The lone attachment on a page created for it by the plugin's own file-creation flow */
+  async getSoleAttachment(pageId: string): Promise<AttachmentInfo> {
+    const response = await this.request(`/rest/api/content/${pageId}/child/attachment?expand=version`);
+    const { results } = (await response.json()) as { results: RawContent[] };
+    if (!results.length) {
+      throw new Error(`Confluence page ${pageId} has no attachments`);
+    }
+    return this.toAttachmentInfo(results[0]);
+  }
+
   async downloadAttachment(downloadUrl: string): Promise<Buffer> {
     const response = await this.request(downloadUrl);
     return Buffer.from(await response.arrayBuffer());

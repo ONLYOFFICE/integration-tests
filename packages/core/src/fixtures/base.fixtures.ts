@@ -19,6 +19,12 @@ export function registerAdapter(projectName: string, factory: AdapterFactory): v
 interface TestFixtures {
   /** Creates a file via the API and deletes it after the test */
   createFile: (type?: FileType) => Promise<FileRef>;
+  /**
+   * Creates a file through the plugin's own "Create new document" integration and deletes it
+   * after the test. Unlike createFile, this navigates `page` to the resulting editor as a
+   * side effect — attach an EditorPage to it directly, no separate openEditor call needed.
+   */
+  createFileViaPlugin: (type?: FileType) => Promise<FileRef>;
   /** Opens the file in the editor and waits for it to fully load */
   openEditor: (file: FileRef) => Promise<EditorPage>;
   /**
@@ -80,6 +86,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(async (type: FileType = 'docx') => {
       const name = `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const file = await adapter.createFile(name, type);
+      created.push(file);
+      return file;
+    });
+    for (const file of created) {
+      await adapter.deleteFile(file).catch(() => {
+        // the file may have been deleted by the test itself — don't fail teardown
+      });
+    }
+  },
+
+  createFileViaPlugin: async ({ page, adapter }, use) => {
+    const created: FileRef[] = [];
+    await use(async (type: FileType = 'docx') => {
+      const file = await adapter.createFileViaPlugin(page, type);
       created.push(file);
       return file;
     });

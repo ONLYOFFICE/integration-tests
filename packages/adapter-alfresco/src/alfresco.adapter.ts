@@ -9,6 +9,14 @@ export interface AlfrescoOptions {
   readOnlyUser: TestUser;
 }
 
+// The plugin's own "Create" menu (see onlyoffice-config.xml's create-content entries) opens
+// onlyoffice-edit?parentNodeRef=...&new=<mime> for exactly these three mime types
+const CREATE_MIME_TYPES: Record<FileType, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
 export class AlfrescoAdapter implements HostAdapter {
   readonly name = 'alfresco';
   readonly baseUrl: string;
@@ -45,6 +53,24 @@ export class AlfrescoAdapter implements HostAdapter {
   async openInEditor(page: Page, file: FileRef): Promise<void> {
     // The editing page added to Share by the onlyoffice-alfresco plugin
     await page.goto(`/share/page/onlyoffice-edit?nodeRef=workspace://SpacesStore/${file.id}`);
+  }
+
+  /**
+   * Drives the same URL the plugin's Share "Create" menu opens (see onlyoffice-doclib-actions.js:
+   * `onlyoffice-edit?parentNodeRef=...&new=<mime>`) — the plugin creates a blank file in the
+   * user's home folder and redirects the page itself to `?nodeRef=<new node>`.
+   */
+  async createFileViaPlugin(page: Page, type: FileType): Promise<FileRef> {
+    const home = await this.api.getNode('-my-');
+    await page.goto(
+      `/share/page/onlyoffice-edit?parentNodeRef=workspace://SpacesStore/${home.id}&new=${encodeURIComponent(CREATE_MIME_TYPES[type])}`,
+    );
+    await page.waitForURL((url) => url.searchParams.has('nodeRef'), { timeout: 30_000 });
+
+    const nodeRef = new URL(page.url()).searchParams.get('nodeRef')!;
+    const id = nodeRef.split('/').pop()!;
+    const node = await this.api.getNode(id);
+    return { id, name: node.name, type };
   }
 
   async downloadFile(file: FileRef): Promise<Buffer> {

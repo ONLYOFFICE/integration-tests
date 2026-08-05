@@ -37,6 +37,13 @@ export interface HostAdapter {
   /** Creates a file via the host system's REST API (not via UI) */
   createFile(name: string, type: FileType): Promise<FileRef>;
 
+  /**
+   * Creates a new blank file through the plugin's own "Create new document" integration
+   * (not via the host's REST API) and leaves `page` navigated to it in the editor —
+   * used by scenarios that verify this specific plugin↔host integration point.
+   */
+  createFileViaPlugin(page: Page, type: FileType): Promise<FileRef>;
+
   /** Navigates to the file's editing page in ONLYOFFICE */
   openInEditor(page: Page, file: FileRef): Promise<void>;
 
