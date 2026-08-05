@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { FileRef, FileType, HostAdapter, loadTemplate, TestUser } from '@core';
+import { FileRef, FileType, HostAdapter, LegacyFileType, loadConvertTemplate, loadTemplate, TestUser } from '@core';
 import { ConfluenceApi } from './confluence.api';
 
 export interface ConfluenceOptions {
@@ -13,6 +13,10 @@ export interface ConfluenceOptions {
 // so all test files live as attachments on pages in one dedicated space.
 const TEST_SPACE_KEY = 'OITEST';
 const TEST_SPACE_NAME = 'Integration Tests';
+
+// The plugin's own convert.vm dialog picks the default convert target itself — these are just
+// the OOXML types it lands on for each source
+const CONVERT_TARGETS: Record<LegacyFileType, FileType> = { odt: 'docx', ods: 'xlsx', odp: 'pptx' };
 
 export class ConfluenceAdapter implements HostAdapter {
   readonly name = 'confluence';
@@ -133,5 +137,29 @@ export class ConfluenceAdapter implements HostAdapter {
   async restrictToReadOnly(file: FileRef): Promise<void> {
     const { pageId } = this.parseId(file.id);
     await this.api.restrictUpdateTo(pageId, this.defaultUser.username, this.readOnlyUser.username);
+  }
+
+  /**
+   * Uploads a legacy-format attachment, then drives the plugin's own "Convert" dialog
+   * (convert.vm: a GET renders the dialog, whose JS polls the same URL via POST until
+   * conversion finishes, then navigates the tab itself to doceditor?attachmentId=<converted>).
+   * Letting the real page run that JS — rather than calling the POST directly — sidesteps
+   * needing to know the converted attachment's id up front; it's read off the final URL.
+   */
+  async convertLegacyFile(page: Page, sourceType: LegacyFileType): Promise<FileRef> {
+    await this.ensureTestSpace();
+    const targetType = CONVERT_TARGETS[sourceType];
+    const name = `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const pageId = await this.api.createPage(TEST_SPACE_KEY, name);
+    const attachment = await this.api.uploadAttachment(pageId, `${name}.${sourceType}`, loadConvertTemplate(sourceType));
+
+    await page.goto(`/plugins/servlet/onlyoffice/convert?attachmentId=${attachment.id}`);
+    await page.waitForURL((url) => url.pathname.includes('/doceditor') && url.searchParams.has('attachmentId'), {
+      timeout: 60_000,
+    });
+
+    const convertedAttachmentId = new URL(page.url()).searchParams.get('attachmentId')!;
+    const converted = await this.api.getAttachment(convertedAttachmentId);
+    return { id: `${pageId}:${convertedAttachmentId}`, name: converted.name, type: targetType };
   }
 }

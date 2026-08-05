@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { FileRef, FileType, HostAdapter, loadTemplate, TestUser } from '@core';
+import { FileRef, FileType, HostAdapter, LegacyFileType, loadConvertTemplate, loadTemplate, TestUser } from '@core';
 import { AlfrescoApi } from './alfresco.api';
 
 export interface AlfrescoOptions {
@@ -16,6 +16,10 @@ const CREATE_MIME_TYPES: Record<FileType, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
+
+// The plugin's "onlyoffice-convert" repository action (see ConvertAction) picks the default
+// convert target itself — these are just the OOXML types it lands on for each source
+const CONVERT_TARGETS: Record<LegacyFileType, FileType> = { odt: 'docx', ods: 'xlsx', odp: 'pptx' };
 
 export class AlfrescoAdapter implements HostAdapter {
   readonly name = 'alfresco';
@@ -99,6 +103,37 @@ export class AlfrescoAdapter implements HostAdapter {
   /** Grants readOnlyUser the "Consumer" (read-only) permission on the file's node */
   async restrictToReadOnly(file: FileRef): Promise<void> {
     await this.api.setNodePermission(file.id, this.readOnlyUser.username, 'Consumer');
+  }
+
+  /**
+   * Uploads a legacy-format file and runs the plugin's "onlyoffice-convert" repository action
+   * on it (the same action the Share doclib "Convert" button queues). With convertOriginal off
+   * (the default — see configureDocumentServer), the action leaves the source node alone and
+   * creates a new sibling node next to it named `<baseName>.<targetExt>`, so once that shows up
+   * the source is no longer needed and is cleaned up here.
+   */
+  async convertLegacyFile(_page: Page, sourceType: LegacyFileType): Promise<FileRef> {
+    const targetType = CONVERT_TARGETS[sourceType];
+    const baseName = `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const source = await this.api.uploadFile(`${baseName}.${sourceType}`, loadConvertTemplate(sourceType));
+
+    await this.api.executeAction('onlyoffice-convert', source.id);
+
+    const convertedName = `${baseName}.${targetType}`;
+    const deadline = Date.now() + 60_000;
+    let converted = await this.api.findChildByName('-my-', convertedName);
+    while (!converted && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      converted = await this.api.findChildByName('-my-', convertedName);
+    }
+    if (!converted) {
+      throw new Error(`Converting ${source.name} did not produce ${convertedName} within 60s`);
+    }
+
+    await this.api.deleteNode(source.id).catch(() => {
+      // best-effort — the important cleanup is the converted result, tracked by the caller
+    });
+    return { id: converted.id, name: converted.name, type: targetType };
   }
 
   /**

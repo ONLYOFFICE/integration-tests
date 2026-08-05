@@ -78,6 +78,28 @@ export class AlfrescoApi {
     await this.request(`/nodes/${id}`, { method: 'DELETE' });
   }
 
+  /** Executes a repository action (e.g. the plugin's "onlyoffice-convert") on a node */
+  async executeAction(actionDefinitionId: string, targetId: string): Promise<void> {
+    await this.request('/action-executions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actionDefinitionId, targetId, params: {} }),
+    });
+  }
+
+  /**
+   * Finds a direct child of a folder by exact name, if one exists. The children endpoint's
+   * `where` clause doesn't support filtering by `name` (only isFolder/isFile/nodeType), so this
+   * lists children instead — newest first, so a just-created node surfaces on the first page
+   * regardless of how many other files are sitting in the folder.
+   */
+  async findChildByName(parentId: string, name: string): Promise<NodeEntry | null> {
+    const orderBy = encodeURIComponent('createdAt DESC');
+    const response = await this.request(`/nodes/${parentId}/children?maxItems=50&orderBy=${orderBy}`);
+    const { list } = (await response.json()) as { list: { entries: { entry: NodeEntry }[] } };
+    return list.entries.find(({ entry }) => entry.name === name)?.entry ?? null;
+  }
+
   private async personExists(id: string): Promise<boolean> {
     const response = await fetch(`${this.apiRoot}/people/${id}`, { headers: this.authHeader });
     return response.ok;

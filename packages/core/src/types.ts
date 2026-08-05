@@ -2,6 +2,9 @@ import type { Page } from '@playwright/test';
 
 export type FileType = 'docx' | 'xlsx' | 'pptx';
 
+/** Legacy OpenDocument formats the plugin's "Convert" integration turns into FileType */
+export type LegacyFileType = 'odt' | 'ods' | 'odp';
+
 export interface TestUser {
   username: string;
   password: string;
@@ -65,4 +68,12 @@ export interface HostAdapter {
    * used by scenarios that verify the editor's read-only/view mode.
    */
   restrictToReadOnly(file: FileRef): Promise<void>;
+
+  /**
+   * Creates a legacy-format file (odt/ods/odp) and converts it to the matching OOXML type
+   * through the plugin's own "Convert" integration (Document Server's Convert API) — not by
+   * opening it in the editor — and returns the resulting docx/xlsx/pptx file. The caller is
+   * responsible for deleting the returned file (same as createFile).
+   */
+  convertLegacyFile(page: Page, sourceType: LegacyFileType): Promise<FileRef>;
 }

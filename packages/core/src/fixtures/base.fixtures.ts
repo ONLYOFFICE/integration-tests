@@ -2,7 +2,7 @@ import { BrowserContext, test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EditorPage } from '../editor/editor.page';
-import { FileRef, FileType, HostAdapter, TestUser } from '../types';
+import { FileRef, FileType, HostAdapter, LegacyFileType, TestUser } from '../types';
 
 export type AdapterFactory = () => HostAdapter;
 
@@ -25,6 +25,11 @@ interface TestFixtures {
    * side effect — attach an EditorPage to it directly, no separate openEditor call needed.
    */
   createFileViaPlugin: (type?: FileType) => Promise<FileRef>;
+  /**
+   * Creates a legacy-format file (odt/ods/odp) and converts it to the matching OOXML type
+   * through the plugin's own "Convert" integration, deleting the resulting file after the test.
+   */
+  convertLegacyFile: (sourceType: LegacyFileType) => Promise<FileRef>;
   /** Opens the file in the editor and waits for it to fully load */
   openEditor: (file: FileRef) => Promise<EditorPage>;
   /**
@@ -100,6 +105,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     const created: FileRef[] = [];
     await use(async (type: FileType = 'docx') => {
       const file = await adapter.createFileViaPlugin(page, type);
+      created.push(file);
+      return file;
+    });
+    for (const file of created) {
+      await adapter.deleteFile(file).catch(() => {
+        // the file may have been deleted by the test itself — don't fail teardown
+      });
+    }
+  },
+
+  convertLegacyFile: async ({ page, adapter }, use) => {
+    const created: FileRef[] = [];
+    await use(async (sourceType: LegacyFileType) => {
+      const file = await adapter.convertLegacyFile(page, sourceType);
       created.push(file);
       return file;
     });
