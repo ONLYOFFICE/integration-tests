@@ -6,6 +6,7 @@ export interface ConfluenceOptions {
   baseUrl: string;
   admin: TestUser;
   secondUser: TestUser;
+  readOnlyUser: TestUser;
 }
 
 // Confluence has no bare "file" content type — every attachment needs a hosting page,
@@ -18,6 +19,7 @@ export class ConfluenceAdapter implements HostAdapter {
   readonly baseUrl: string;
   readonly defaultUser: TestUser;
   readonly secondUser: TestUser;
+  readonly readOnlyUser: TestUser;
 
   private readonly api: ConfluenceApi;
   private ensureSpacePromise: Promise<void> | null = null;
@@ -26,6 +28,7 @@ export class ConfluenceAdapter implements HostAdapter {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.defaultUser = options.admin;
     this.secondUser = options.secondUser;
+    this.readOnlyUser = options.readOnlyUser;
     this.api = new ConfluenceApi(this.baseUrl, options.admin);
   }
 
@@ -106,5 +109,11 @@ export class ConfluenceAdapter implements HostAdapter {
     // Deleting the page cascades to its attachments — no need to delete the attachment separately
     const { pageId } = this.parseId(file.id);
     await this.api.deleteContent(pageId);
+  }
+
+  /** Restricts editing of the file's hosting page to the admin user, leaving readOnlyUser view-only */
+  async restrictToReadOnly(file: FileRef): Promise<void> {
+    const { pageId } = this.parseId(file.id);
+    await this.api.restrictUpdateTo(pageId, this.defaultUser.username, this.readOnlyUser.username);
   }
 }

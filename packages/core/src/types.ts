@@ -26,6 +26,8 @@ export interface HostAdapter {
   readonly defaultUser: TestUser;
   /** A second, independent account — used by scenarios that need two simultaneous editing sessions */
   readonly secondUser: TestUser;
+  /** A third, independent account with no edit rights by default — used by read-only scenarios */
+  readonly readOnlyUser: TestUser;
   /** Selector for the editor iframe on the host system page */
   readonly editorFrameSelector?: string;
 
@@ -50,4 +52,10 @@ export interface HostAdapter {
   waitForSave(file: FileRef, since: Date, timeoutMs?: number): Promise<void>;
 
   deleteFile(file: FileRef): Promise<void>;
+
+  /**
+   * Restricts the file so that `readOnlyUser` can view but not edit it —
+   * used by scenarios that verify the editor's read-only/view mode.
+   */
+  restrictToReadOnly(file: FileRef): Promise<void>;
 }

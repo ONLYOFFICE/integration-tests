@@ -10,6 +10,8 @@ const ADMIN_USER = process.env.CONFLUENCE_USER ?? 'admin';
 const ADMIN_PASSWORD = process.env.CONFLUENCE_PASSWORD ?? 'admin';
 const SECOND_USER = process.env.CONFLUENCE_USER2 ?? 'autotest2';
 const SECOND_PASSWORD = process.env.CONFLUENCE_PASSWORD2 ?? 'automation123';
+const READONLY_USER = process.env.CONFLUENCE_USER3 ?? 'autotest3';
+const READONLY_PASSWORD = process.env.CONFLUENCE_PASSWORD3 ?? 'automation123';
 // atlassian-plugin.xml's "key" attribute — stable across plugin releases (see environments/confluence/artifacts)
 const PLUGIN_KEY = 'onlyoffice.onlyoffice-confluence-plugin';
 
@@ -191,22 +193,22 @@ async function completeSetupWizard(): Promise<void> {
 }
 
 /**
- * Creates a second, unprivileged test account via the admin console's classic form (there's no
- * REST endpoint for user creation on this Confluence version — /rest/api/user only supports GET).
+ * Creates an unprivileged test account via the admin console's classic form (there's no REST
+ * endpoint for user creation on this Confluence version — /rest/api/user only supports GET).
  * Requires an already-elevated (websudo) session, same as the UPM calls below. No extra space
  * permissions are needed: new users are added to confluence-users by default, which already has
  * read/update rights on OITEST because the space was created without a restrictive permission
  * scheme.
  */
-async function ensureSecondUser(session: AdminSession): Promise<void> {
+async function ensureUser(session: AdminSession, username: string, password: string, fullName: string): Promise<void> {
   // viewuser.action always answers 200 — even for an unknown username, rendering an error
   // banner instead — so existence is checked by title, not by status
-  const existing = await session.request(`/admin/users/viewuser.action?username=${SECOND_USER}`);
-  if ((await existing.text()).includes(`<title>View User: ${SECOND_USER}`)) {
+  const existing = await session.request(`/admin/users/viewuser.action?username=${username}`);
+  if ((await existing.text()).includes(`<title>View User: ${username}`)) {
     return;
   }
 
-  console.log(`[confluence] Creating the second test account (${SECOND_USER})...`);
+  console.log(`[confluence] Creating test account (${username})...`);
   const formPage = await session.request('/admin/users/createuser.action');
   const html = await formPage.text();
   const match = html.match(/name="atl_token" value="([^"]+)"/);
@@ -219,15 +221,15 @@ async function ensureSecondUser(session: AdminSession): Promise<void> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       atl_token: match[1],
-      username: SECOND_USER,
-      fullName: 'Autotest Second',
-      email: `${SECOND_USER}@example.com`,
-      password: SECOND_PASSWORD,
-      confirm: SECOND_PASSWORD,
+      username,
+      fullName,
+      email: `${username}@example.com`,
+      password,
+      confirm: password,
     }).toString(),
   });
   if (!response.ok) {
-    throw new Error(`[confluence] Failed to create the second test account: HTTP ${response.status} ${await response.text()}`);
+    throw new Error(`[confluence] Failed to create test account ${username}: HTTP ${response.status} ${await response.text()}`);
   }
 }
 
@@ -409,7 +411,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   const session = createAdminSession();
   await login(session);
   await elevateToWebsudo(session);
-  await ensureSecondUser(session);
+  await ensureUser(session, SECOND_USER, SECOND_PASSWORD, 'Autotest Second');
+  await ensureUser(session, READONLY_USER, READONLY_PASSWORD, 'Autotest ReadOnly');
   await installPlugin(session);
   await configureDocumentServer(session, ds);
   await warmUpEditor(session);

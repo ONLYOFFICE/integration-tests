@@ -6,6 +6,7 @@ export interface AlfrescoOptions {
   baseUrl: string;
   admin: TestUser;
   secondUser: TestUser;
+  readOnlyUser: TestUser;
 }
 
 export class AlfrescoAdapter implements HostAdapter {
@@ -13,6 +14,7 @@ export class AlfrescoAdapter implements HostAdapter {
   readonly baseUrl: string;
   readonly defaultUser: TestUser;
   readonly secondUser: TestUser;
+  readonly readOnlyUser: TestUser;
   readonly editorFrameSelector = 'iframe[name="frameEditor"]';
 
   private readonly api: AlfrescoApi;
@@ -21,6 +23,7 @@ export class AlfrescoAdapter implements HostAdapter {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
     this.defaultUser = options.admin;
     this.secondUser = options.secondUser;
+    this.readOnlyUser = options.readOnlyUser;
     this.api = new AlfrescoApi(this.baseUrl, options.admin);
   }
 
@@ -67,6 +70,11 @@ export class AlfrescoAdapter implements HostAdapter {
     await this.api.deleteNode(file.id);
   }
 
+  /** Grants readOnlyUser the "Consumer" (read-only) permission on the file's node */
+  async restrictToReadOnly(file: FileRef): Promise<void> {
+    await this.api.setNodePermission(file.id, this.readOnlyUser.username, 'Consumer');
+  }
+
   /**
    * Writes the Document Server URL and JWT secret into the onlyoffice-alfresco
    * plugin settings and verifies the connection via the plugin's built-in validation.
@@ -99,6 +107,16 @@ export class AlfrescoAdapter implements HostAdapter {
   /** Creates the secondUser account, if it doesn't already exist, as a repository administrator */
   async ensureSecondUser(): Promise<void> {
     await this.api.ensurePerson(this.secondUser);
+    await this.api.addToAdminGroup(this.secondUser);
+  }
+
+  /**
+   * Creates the readOnlyUser account, if it doesn't already exist. Unlike secondUser, it's a
+   * plain (non-admin) person — admins bypass per-node ACLs, so testing read-only access
+   * requires an account that Alfresco's permission checks actually apply to.
+   */
+  async ensureReadOnlyUser(): Promise<void> {
+    await this.api.ensurePerson(this.readOnlyUser);
   }
 
   /** Plugin's built-in check: DS availability, command and convert services (including JWT) */

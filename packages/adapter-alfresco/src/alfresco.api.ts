@@ -83,32 +83,50 @@ export class AlfrescoApi {
     return response.ok;
   }
 
-  /**
-   * Creates a person and adds it to GROUP_ALFRESCO_ADMINISTRATORS — administrators bypass
-   * per-node ACLs in Alfresco, so this is the simplest way to give a second test account
-   * access to content created by the admin user (home folders are private by default).
-   */
+  /** Creates a person, if it doesn't already exist. Has no access to anything by default. */
   async ensurePerson(user: TestUser): Promise<void> {
-    if (!(await this.personExists(user.username))) {
-      await this.request('/people', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: user.username,
-          firstName: user.username,
-          lastName: 'Autotest',
-          email: `${user.username}@example.com`,
-          password: user.password,
-          enabled: true,
-        }),
-      });
+    if (await this.personExists(user.username)) {
+      return;
     }
+    await this.request('/people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: user.username,
+        firstName: user.username,
+        lastName: 'Autotest',
+        email: `${user.username}@example.com`,
+        password: user.password,
+        enabled: true,
+      }),
+    });
+  }
+
+  /**
+   * Adds a person to GROUP_ALFRESCO_ADMINISTRATORS — administrators bypass per-node ACLs in
+   * Alfresco, so this is the simplest way to give a second test account access to content
+   * created by the admin user (home folders are private by default).
+   */
+  async addToAdminGroup(user: TestUser): Promise<void> {
     await this.request('/groups/GROUP_ALFRESCO_ADMINISTRATORS/members', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: user.username, memberType: 'PERSON' }),
     }).catch(() => {
       // already a member — Alfresco returns 409 for a duplicate membership
+    });
+  }
+
+  /** Grants an authority (person or group) a permission on a node, without touching inheritance */
+  async setNodePermission(nodeId: string, authorityId: string, permissionName: string): Promise<void> {
+    await this.request(`/nodes/${nodeId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        permissions: {
+          locallySet: [{ authorityId, name: permissionName, accessStatus: 'ALLOWED' }],
+        },
+      }),
     });
   }
 }

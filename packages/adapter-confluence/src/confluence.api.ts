@@ -159,4 +159,32 @@ export class ConfluenceApi {
   async deleteContent(id: string): Promise<void> {
     await this.request(`/rest/api/content/${id}`, { method: 'DELETE' });
   }
+
+  /**
+   * Restricts the "update" operation on a page to editorUsername only, while explicitly keeping
+   * viewerUsername able to read it. Once any restriction is set, "read" stops being the space's
+   * default open access and becomes an allow-list itself — Confluence also rejects an "update"
+   * restriction whose user isn't also present in "read" — so both users need a "read" entry, and
+   * only editorUsername gets an "update" entry. Attachments have no restrictions of their own;
+   * they defer to their parent page's, so this also covers the file attached to it.
+   */
+  async restrictUpdateTo(pageId: string, editorUsername: string, viewerUsername: string): Promise<void> {
+    await this.request(`/rest/api/content/${pageId}/restriction`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([
+        {
+          operation: 'read',
+          restrictions: {
+            user: [{ type: 'known', username: editorUsername }, { type: 'known', username: viewerUsername }],
+            group: [],
+          },
+        },
+        {
+          operation: 'update',
+          restrictions: { user: [{ type: 'known', username: editorUsername }], group: [] },
+        },
+      ]),
+    });
+  }
 }
