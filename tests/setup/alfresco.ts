@@ -8,6 +8,11 @@ const stack = stackFor('alfresco');
 const ALFRESCO_CONTAINER = `${stack.COMPOSE_PROJECT}-alfresco-1`;
 const SHARE_CONTAINER = `${stack.COMPOSE_PROJECT}-share-1`;
 
+// setup() publishes the fresh stack's address via process.env.ALFRESCO_URL for the fixtures to
+// pick up, so teardown() can't tell "reused" from "just started" by re-checking that var — it
+// has to be captured up front, before setup() overwrites it.
+let reusingExisting = false;
+
 /**
  * Spins up the Alfresco stack from environments/alfresco (version — ALFRESCO_VERSION),
  * installs the plugin's AMP packages and its settings (alfresco-global.properties)
@@ -15,7 +20,8 @@ const SHARE_CONTAINER = `${stack.COMPOSE_PROJECT}-share-1`;
  * The resulting address is passed to the tests via process.env.ALFRESCO_URL.
  */
 export async function setup(ds: DocumentServer): Promise<void> {
-  if (process.env.ALFRESCO_URL) {
+  reusingExisting = Boolean(process.env.ALFRESCO_URL);
+  if (reusingExisting) {
     console.log(`[alfresco] Using existing Alfresco at ${process.env.ALFRESCO_URL} (ALFRESCO_URL is set) — skipping stack setup`);
     return;
   }
@@ -81,7 +87,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
 /** Stops and fully removes the Alfresco stack along with its volumes */
 export function teardown(): void {
-  if (process.env.ALFRESCO_URL) {
+  if (reusingExisting) {
     return;
   }
   console.log('[alfresco] Removing stack...');

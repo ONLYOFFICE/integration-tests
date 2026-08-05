@@ -13,6 +13,11 @@ const SECOND_PASSWORD = process.env.CONFLUENCE_PASSWORD2 ?? 'automation123';
 // atlassian-plugin.xml's "key" attribute — stable across plugin releases (see environments/confluence/artifacts)
 const PLUGIN_KEY = 'onlyoffice.onlyoffice-confluence-plugin';
 
+// setup() publishes the fresh stack's address via process.env.CONFLUENCE_URL for the fixtures to
+// pick up, so teardown() can't tell "reused" from "just started" by re-checking that var — it
+// has to be captured up front, before setup() overwrites it.
+let reusingExisting = false;
+
 /**
  * A cookie-based admin session. Basic Auth is disabled by default on this Confluence version
  * ("Basic Authentication has been disabled on this instance"), so the UPM/plugin-config calls
@@ -370,7 +375,8 @@ async function warmUpEditor(session: AdminSession): Promise<void> {
  * tests via process.env.CONFLUENCE_URL.
  */
 export async function setup(ds: DocumentServer): Promise<void> {
-  if (process.env.CONFLUENCE_URL) {
+  reusingExisting = Boolean(process.env.CONFLUENCE_URL);
+  if (reusingExisting) {
     console.log(`[confluence] Using existing Confluence at ${process.env.CONFLUENCE_URL} (CONFLUENCE_URL is set) — skipping stack setup`);
     return;
   }
@@ -417,7 +423,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
 /** Stops and fully removes the Confluence stack along with its volumes */
 export function teardown(): void {
-  if (process.env.CONFLUENCE_URL) {
+  if (reusingExisting) {
     return;
   }
   console.log('[confluence] Removing stack...');
