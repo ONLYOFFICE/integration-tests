@@ -1,5 +1,6 @@
 import * as alfresco from './alfresco';
 import * as confluence from './confluence';
+import * as jira from './jira';
 import type { DocumentServer } from './document-server';
 
 export interface SystemStand {
@@ -7,7 +8,7 @@ export interface SystemStand {
   teardown(): void;
 }
 
-const SYSTEMS: Record<string, SystemStand> = { alfresco, confluence };
+const SYSTEMS: Record<string, SystemStand> = { alfresco, confluence, jira };
 
 /**
  * Systems the tests are actually running against — from --project=<name> in the

@@ -1,0 +1,51 @@
+version: '3'
+
+services:
+    jira:
+        image: atlassian/jira-software:${JIRA_VERSION:-11.3.4}
+        environment:
+            CATALINA_OPTS: "-Dupm.plugin.upload.enabled=true -Datlassian.upm.signature.check.disabled=true -Datlassian.authentication.legacy.mode=true"
+            # Closes the DB screen in the setup wizard. The other screens (application
+            # properties, license, admin account, mail, language, avatar, sample project)
+            # Atlassian doesn't let you configure via env at all — tests/setup/jira.ts
+            # completes them with plain POST requests, same approach as Confluence
+            ATL_DB_TYPE: postgresql
+            ATL_JDBC_URL: "jdbc:postgresql://postgres:5432/jira"
+            ATL_JDBC_USER: jira
+            ATL_JDBC_PASSWORD: jira
+            # Makes Tomcat report this host/port for every request (regardless of the Host
+            # header actually used to reach it), so Jira auto-detects and stores this as its
+            # base URL during setup — the ONLYOFFICE plugin needs a base URL the Document
+            # Server container can reach back over, not 127.0.0.1 (see tests/setup/jira.ts)
+            ATL_PROXY_NAME: ${JIRA_PROXY_NAME}
+            ATL_PROXY_PORT: "8080"
+            ATL_TOMCAT_SCHEME: http
+            ATL_TOMCAT_SECURE: "false"
+        ports:
+          - '8080:8080'
+        networks:
+            - atlassian
+        depends_on:
+            postgres:
+                condition: service_healthy
+
+    postgres:
+        image: postgres:13.9
+        environment:
+            POSTGRES_DB: jira
+            POSTGRES_USER: jira
+            POSTGRES_PASSWORD: jira
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -d $$POSTGRES_DB -U $$POSTGRES_USER"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 5s
+        networks:
+            - atlassian
+
+networks:
+    atlassian:
+        name: atlassian
