@@ -31,5 +31,10 @@ export default defineConfig({
       testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'],
       testIgnore: ['shared/force-save.spec.ts'],
     },
+    {
+      name: 'jira',
+      testMatch: ['shared/**/*.spec.ts', 'jira/**/*.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts'],
+    },
   ],
 });
