@@ -22,6 +22,14 @@ const SECOND_USER = process.env.LIFERAY_USER2 ?? 'autotest2@example.com';
 const SECOND_PASSWORD = process.env.LIFERAY_PASSWORD2 ?? 'automation123';
 const READONLY_USER = process.env.LIFERAY_USER3 ?? 'autotest3@example.com';
 const READONLY_PASSWORD = process.env.LIFERAY_PASSWORD3 ?? 'automation123';
+// Liferay's paid distribution is published as `liferay/dxp` (vs. the free `liferay/portal`) and
+// enforces a license — see requireLicenseIfDxp/installLicense.
+const LICENSE_FILE = 'license.xml';
+
+function isDxpImage(image: string): boolean {
+  return image.includes('/dxp');
+}
+
 // OSGi bundle symbolic names for our plugins are namespaced under this prefix — see the
 // AutoDeployScanner/fileinstall log lines this is matched against in installPlugin
 const PLUGIN_BUNDLE_PREFIX = 'com.onlyoffice.';
@@ -88,6 +96,50 @@ async function installPlugin(): Promise<void> {
     }
     if (Date.now() > deadline) {
       throw new Error(`[liferay] Plugin ${artifactName} did not start within 120s`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
+
+/**
+ * Copies the DXP license (environments/liferay/artifacts/license.xml, checked to exist by
+ * requireLicenseIfDxp) into environments/liferay/deploy (bind-mounted to /opt/liferay/deploy —
+ * see docker-compose.yml), the same AutoDeployScanner hot-deploy path used for the plugin jar.
+ * Unlike a plugin bundle, a license is picked up by Felix fileinstall's directory watcher rather
+ * than the OSGi bundle lifecycle, e.g.:
+ *   AutoDeployScanner: Processing license.xml
+ *   fileinstall-directory-watcher: Digital Enterprise Development license validation passed
+ *   fileinstall-directory-watcher: License registered for Digital Enterprise Development
+ * Only log lines from after the matching "Processing license.xml" line are inspected, so
+ * unrelated ERRORs from other bundles earlier in the (already-running) container don't trip this
+ * up. Throws if validation fails or registration isn't confirmed within the timeout.
+ */
+async function installLicense(): Promise<void> {
+  const licensePath = path.join(stack.ENV_DIR, 'artifacts', LICENSE_FILE);
+  const deployDir = path.join(stack.ENV_DIR, 'deploy');
+
+  console.log(`[liferay] Deploying DXP license ${LICENSE_FILE}...`);
+  fs.mkdirSync(deployDir, { recursive: true });
+  fs.copyFileSync(licensePath, path.join(deployDir, LICENSE_FILE));
+
+  console.log('[liferay] Waiting for the license to register...');
+  const marker = `Processing ${LICENSE_FILE}`;
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const logs = stack.sh(`docker logs ${LIFERAY_CONTAINER}`, { ignoreErrors: true });
+    const processingIndex = logs.lastIndexOf(marker);
+    if (processingIndex !== -1) {
+      const sinceProcessing = logs.slice(processingIndex);
+      if (sinceProcessing.includes('License registered for')) {
+        console.log('[liferay] DXP license registered');
+        return;
+      }
+      if (/license validation failed/i.test(sinceProcessing)) {
+        throw new Error(`[liferay] DXP license failed to validate:\n${sinceProcessing.trim()}`);
+      }
+    }
+    if (Date.now() > deadline) {
+      throw new Error('[liferay] DXP license did not register within 120s');
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
@@ -216,8 +268,32 @@ async function completeInitialAdminPasswordReset(): Promise<void> {
   }
 
   console.log('[liferay] Completing the one-time admin password reset...');
-  const field = (name: string) => {
+
+  // The login response isn't the New Password form itself — it's a ticket page that
+  // auto-submits via onload="document.fm.submit()" to /c/portal/update_password with just
+  // p_l_id/ticketId/ticketKey. Only the *response* to that POST carries the actual form fields
+  // (formDate, p_auth, etc.) used below. There's no JS runtime here to fire the onload handler,
+  // so that hop is replayed manually.
+  const ticketField = (name: string) => {
     const value = extractField(afterLogin, name);
+    if (value === undefined) {
+      throw new Error(`[liferay] Could not find "${name}" on the password-reset ticket page`);
+    }
+    return value;
+  };
+  const resetPageResponse = await session.follow('/c/portal/update_password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      p_l_id: ticketField('p_l_id'),
+      ticketId: ticketField('ticketId'),
+      ticketKey: ticketField('ticketKey'),
+    }),
+  });
+  const resetPage = await resetPageResponse.text();
+
+  const field = (name: string) => {
+    const value = extractField(resetPage, name);
     if (value === undefined) {
       throw new Error(`[liferay] Could not find "${name}" on the New Password page`);
     }
@@ -323,6 +399,24 @@ async function grantEditorPortletAccess(): Promise<void> {
   }
 }
 
+/**
+ * DXP (`liferay/dxp:...`) is Liferay's paid distribution and refuses to run unlicensed, unlike
+ * the free `liferay/portal` image — checked up front so a missing license file surfaces as a
+ * clear setup error instead of a confusing runtime failure once the stack is already up.
+ */
+function requireLicenseIfDxp(): void {
+  if (!isDxpImage(process.env.LIFERAY_IMAGE!)) {
+    return;
+  }
+  const licensePath = path.join(stack.ENV_DIR, 'artifacts', LICENSE_FILE);
+  if (!fs.existsSync(licensePath)) {
+    throw new Error(
+      `[liferay] LIFERAY_IMAGE (${process.env.LIFERAY_IMAGE}) is a DXP (paid) image — ` +
+        `place a valid license file at environments/liferay/artifacts/${LICENSE_FILE}`,
+    );
+  }
+}
+
 export async function setup(ds: DocumentServer): Promise<void> {
   reusingExisting = Boolean(process.env.LIFERAY_URL);
   if (reusingExisting) {
@@ -335,6 +429,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
       '[liferay] LIFERAY_IMAGE must be set in .env to a Docker image tag (e.g. "liferay/portal:7.4.3.132-ga132")',
     );
   }
+  requireLicenseIfDxp();
 
   console.log(`[liferay] Starting Liferay ${process.env.LIFERAY_IMAGE} (project ${stack.COMPOSE_PROJECT})...`);
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} up -d --quiet-pull`, {
@@ -347,6 +442,10 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
   console.log('[liferay] Waiting for the Liferay web interface (first start can take a few minutes)...');
   await waitForHttp('Liferay', `${process.env.LIFERAY_URL}/c/portal/login`, (r) => r.ok, 900_000);
+
+  if (isDxpImage(process.env.LIFERAY_IMAGE)) {
+    await installLicense();
+  }
 
   await completeInitialAdminPasswordReset();
   await installPlugin();

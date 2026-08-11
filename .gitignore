@@ -2,7 +2,6 @@ node_modules/
 test-results/
 playwright-report/
 .env
-environments/*/artifacts/*.amp
-environments/*/artifacts/*.jar
-environments/*/deploy/*.jar
-environments/*/configs/*.config
+environments/*/artifacts/*
+environments/*/deploy/*
+environments/*/configs/*
