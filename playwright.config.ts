@@ -36,5 +36,9 @@ export default defineConfig({
       testMatch: ['shared/**/*.spec.ts', 'jira/**/*.spec.ts'],
       testIgnore: ['shared/force-save.spec.ts'],
     },
+    {
+      name: 'liferay',
+      testMatch: ['shared/**/*.spec.ts', 'liferay/**/*.spec.ts'],
+    },
   ],
 });

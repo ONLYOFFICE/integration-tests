@@ -8,6 +8,7 @@
     "test:alfresco": "playwright test --project=alfresco",
     "test:confluence": "playwright test --project=confluence",
     "test:jira": "playwright test --project=jira",
+    "test:liferay": "playwright test --project=liferay",
     "test:smoke": "playwright test --grep @smoke",
     "report": "playwright show-report",
     "stand:cleanup": "node scripts/cleanup-stands.mjs",

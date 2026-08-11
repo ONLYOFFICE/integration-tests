@@ -2,6 +2,7 @@ import { registerAdapter, test, expect } from '@core';
 import { AlfrescoAdapter } from '@adapters/alfresco';
 import { ConfluenceAdapter } from '@adapters/confluence';
 import { JiraAdapter } from '@adapters/jira';
+import { LiferayAdapter } from '@adapters/liferay';
 
 // Each Playwright project from playwright.config.ts has its own adapter.
 // A new system = a new registerAdapter + a new project in the config.
@@ -55,6 +56,24 @@ registerAdapter('jira', () => {
     readOnlyUser: {
       username: process.env.JIRA_USER3 ?? 'autotest3',
       password: process.env.JIRA_PASSWORD3 ?? 'automation123',
+    },
+  });
+});
+
+registerAdapter('liferay', () => {
+  return new LiferayAdapter({
+    baseUrl: process.env.LIFERAY_URL ?? 'http://localhost:8080',
+    admin: {
+      username: process.env.LIFERAY_USER ?? 'test@liferay.com',
+      password: process.env.LIFERAY_PASSWORD ?? 'Automation1',
+    },
+    secondUser: {
+      username: process.env.LIFERAY_USER2 ?? 'autotest2@example.com',
+      password: process.env.LIFERAY_PASSWORD2 ?? 'automation123',
+    },
+    readOnlyUser: {
+      username: process.env.LIFERAY_USER3 ?? 'autotest3@example.com',
+      password: process.env.LIFERAY_PASSWORD3 ?? 'automation123',
     },
   });
 });
