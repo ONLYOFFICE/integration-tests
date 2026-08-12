@@ -13,8 +13,9 @@ const SYSTEMS: Record<string, SystemStand> = { alfresco, confluence, jira, lifer
 
 /**
  * Systems the tests are actually running against — from --project=<name> in the
- * Playwright arguments (see testMatch in playwright.config.ts). Without the flag —
- * all known systems.
+ * Playwright arguments (see testMatch in playwright.config.ts). Without the flag,
+ * every known system is "selected", which tests/global.setup.ts rejects: only one
+ * system's stand may be up per Playwright invocation (see its docstring).
  */
 export function selectedSystems(): string[] {
   const requested = process.argv

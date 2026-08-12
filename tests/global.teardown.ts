@@ -1,12 +1,11 @@
 import { stopDocumentServer } from './setup/document-server';
 import { selectedSystems, standFor } from './setup/registry';
 
-/** Stops and removes the stack(s) of the system(s) that were spun up, and Document Server */
+/** Stops and removes the stack that was spun up (see global.setup.ts), and Document Server */
 export default async function globalTeardown(): Promise<void> {
   console.log('[global.teardown] Removing stack...');
-  for (const system of selectedSystems()) {
-    standFor(system).teardown();
-  }
+  const [system] = selectedSystems();
+  standFor(system).teardown();
   stopDocumentServer();
   console.log('[global.teardown] Stack stopped and removed');
 }

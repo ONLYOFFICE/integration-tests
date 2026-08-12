@@ -4,7 +4,6 @@
   "private": true,
   "description": "E2E tests for ONLYOFFICE integration plugins (Alfresco, Confluence, ...)",
   "scripts": {
-    "test": "playwright test",
     "test:alfresco": "playwright test --project=alfresco",
     "test:confluence": "playwright test --project=confluence",
     "test:jira": "playwright test --project=jira",

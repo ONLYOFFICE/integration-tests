@@ -16,19 +16,27 @@ npm install
 npx playwright install chromium
 cp .env.example .env              # adjust versions/images
 
-npm run test:alfresco             # run against Alfresco only
-npm run test:confluence           # run against Confluence only
-npm run test:smoke                # fast subset, tag @smoke, any project via --project=
-npx playwright test <file>        # single spec file
-npx playwright test -g "<title>"  # single test by title substring
+npm run test:alfresco              # run against Alfresco only
+npm run test:confluence            # run against Confluence only
+npm run test:jira                  # run against Jira only
+npm run test:liferay               # run against Liferay only
+npm run test:smoke -- --project=<system>       # fast subset, tag @smoke, for one system
+npx playwright test <file> --project=<system>        # single spec file
+npx playwright test -g "<title>" --project=<system>  # single test by title substring
 
 npm run report                    # open the last HTML report
 npm run typecheck                 # tsc --noEmit
 npm run stand:cleanup             # remove orphaned onlyoffice-it-* containers/networks/volumes
 ```
 
-There is no lint script configured. Running the full `npm test` (no `--project`)
-spins up every system's stack in the same run.
+There is no lint script configured, and no "run everything" command: each
+Playwright invocation is only ever allowed to target one system —
+`tests/global.setup.ts` throws if `--project` is omitted or more than one system
+is selected. This is deliberate, not an oversight: each system's
+`environments/<system>/docker-compose.yml` publishes fixed host ports (e.g.
+Alfresco and Confluence both use 8090; Jira and Liferay both use 8080), so two
+systems' stands up at the same time would fail to bind. Run one system at a
+time via `npm run test:<system>`.
 
 Docker must be running; the first run per system is slow (Alfresco/Confluence cold
 start takes a few minutes — global setup waits up to 900s for it).
@@ -46,7 +54,7 @@ packages/
   adapter-confluence/      # HostAdapter impl for Confluence, imported as "@adapters/confluence"
 tests/
   fixtures.ts              # registerAdapter() wiring — the join point between config and adapters
-  global.setup.ts / global.teardown.ts   # orchestrate stack lifecycle for selected systems
+  global.setup.ts / global.teardown.ts   # orchestrate stack lifecycle for the selected system
   stack.ts                 # per-run container/compose-project naming, sh() helpers, waitForHttp()
   setup/<system>.ts        # one file per system: docker compose up, plugin install, DS wiring
   setup/registry.ts        # selectedSystems() reads --project= from argv to decide what to boot
@@ -58,21 +66,27 @@ resources/files/           # blank docx/xlsx/pptx templates used by createFile()
 
 ### Stack lifecycle (global.setup / global.teardown)
 
-1. `startDocumentServer()` starts one shared Document Server container with a fresh
-   JWT secret, then auto-detects the host IP by exec'ing a hairpin curl from inside
+Each Playwright invocation targets exactly one system (`tests/global.setup.ts`
+throws otherwise — see Commands above).
+
+1. `startDocumentServer()` starts a Document Server container with a fresh JWT
+   secret, then auto-detects the host IP by exec'ing a hairpin curl from inside
    the DS container against each of the host's addresses — this IP is what both the
    browser and the host-system containers use to reach each other and DS.
-2. For each selected system (`tests/setup/registry.ts`, derived from `--project=` in
-   Playwright's argv — no flag means all systems), `tests/setup/<system>.ts` runs:
-   spin up that system's `docker-compose.yml`, install the ONLYOFFICE plugin
-   artifact(s), point the plugin at Document Server's URL/secret, verify the
-   connection via the plugin's own validation endpoint, and publish the resulting
-   base URL via `process.env.<SYSTEM>_URL` (workers inherit `process.env`).
+2. The selected system (`tests/setup/registry.ts`, derived from the required
+   `--project=` in Playwright's argv), via `tests/setup/<system>.ts`: spin up that
+   system's `docker-compose.yml`, install the ONLYOFFICE plugin artifact(s), point
+   the plugin at Document Server's URL/secret, verify the connection via the
+   plugin's own validation endpoint, and publish the resulting base URL via
+   `process.env.<SYSTEM>_URL` (workers inherit `process.env`).
 3. Everything is name-scoped per run via `OIT_RUN_ID` (`tests/stack.ts`):
    `onlyoffice-it-<runId>-<system>-...`, so parallel/CI runs never collide. Orphaned
    stacks (e.g. after a killed run) are swept with `npm run stand:cleanup`.
-4. `global.teardown.ts` runs `docker compose down --volumes --remove-orphans` per
-   system plus removing the DS container — the whole stack is disposable.
+4. `global.teardown.ts` runs `docker compose down --volumes --remove-orphans` for
+   the system plus removing the DS container — the whole stack is disposable.
+
+To test another system, run its own `npm run test:<system>` command afterwards —
+there is no command that runs multiple systems in one invocation (see Commands).
 
 ### Adding a new connector
 
@@ -86,6 +100,7 @@ resources/files/           # blank docx/xlsx/pptx templates used by createFile()
    (setup/teardown) and register it in `tests/setup/registry.ts`.
 5. `environments/<system>/artifacts/` — where the plugin build(s) to install are dropped
    (see that directory's own README for the expected filename pattern).
+6. `package.json` — add a `test:<system>` script (`playwright test --project=<system>`).
 
 ### Conventions that shape the tests
 
@@ -102,7 +117,7 @@ resources/files/           # blank docx/xlsx/pptx templates used by createFile()
   session (tab) closes. Wait for content via `expect.poll(...)`, not for the
   modified-date to change (it already changes on open, due to the lock aspect, so
   it can't signal "saved").
-- `@smoke`-tagged tests are the fast subset (`npm run test:smoke`); typically only one
-  file type (docx) is tagged, since xlsx/pptx exercise the same save path.
+- `@smoke`-tagged tests are the fast subset (`npm run test:smoke -- --project=<system>`);
+  typically only one file type (docx) is tagged, since xlsx/pptx exercise the same save path.
 - `baseURL` and `storageState` are resolved per-worker from the adapter (set once the
   stack address is known in global setup), not from static `playwright.config.ts` values.
