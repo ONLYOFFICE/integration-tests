@@ -8,20 +8,22 @@ const stack = stackFor('liferay');
 const LIFERAY_CONTAINER = `${stack.COMPOSE_PROJECT}-liferay-1`;
 // Liferay's default bundled admin account — logins are by email address (company.security.auth.type
 // defaults to "emailAddress"), so this doubles as the login for TestUser.username elsewhere.
-const ADMIN_USER = process.env.LIFERAY_USER ?? 'test@liferay.com';
+const ADMIN_USER = 'test@liferay.com';
 // The bundled demo database ships this account with a forced "change your password" prompt on its
 // very first login. Depending on the LIFERAY_PASSWORDS_PERIOD_DEFAULT_PERIOD_POLICY_PERIOD_*
 // overrides in docker-compose.yml, that prompt may or may not actually appear — so the password
 // this file authenticates admin calls with is only known once completeInitialAdminPasswordReset
 // has run (adminPassword starts as the bootstrap value and is bumped to ADMIN_TARGET_PASSWORD only
-// if a reset actually happened).
+// if a reset actually happened). That outcome is published via process.env.LIFERAY_PASSWORD (see
+// the end of setup() below) for fixtures.ts to pick up — Playwright workers are separate processes
+// from the one running this setup, so process.env is the only channel to hand them that value.
 const ADMIN_BOOTSTRAP_PASSWORD = 'test';
-const ADMIN_TARGET_PASSWORD = process.env.LIFERAY_PASSWORD ?? 'Automation1';
+const ADMIN_TARGET_PASSWORD = 'Automation1';
 let adminPassword = ADMIN_BOOTSTRAP_PASSWORD;
-const SECOND_USER = process.env.LIFERAY_USER2 ?? 'autotest2@example.com';
-const SECOND_PASSWORD = process.env.LIFERAY_PASSWORD2 ?? 'automation123';
-const READONLY_USER = process.env.LIFERAY_USER3 ?? 'autotest3@example.com';
-const READONLY_PASSWORD = process.env.LIFERAY_PASSWORD3 ?? 'automation123';
+const SECOND_USER = 'autotest2@example.com';
+const SECOND_PASSWORD = 'automation123';
+const READONLY_USER = 'autotest3@example.com';
+const READONLY_PASSWORD = 'automation123';
 // Liferay's paid distribution is published as `liferay/dxp` (vs. the free `liferay/portal`) and
 // enforces a license — see requireLicenseIfDxp/installLicense.
 const LICENSE_FILE = 'license.xml';

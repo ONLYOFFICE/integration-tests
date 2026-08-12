@@ -6,12 +6,12 @@ import type { DocumentServer } from './document-server';
 
 const stack = stackFor('confluence');
 const CONFLUENCE_URL = 'http://127.0.0.1:8090'; // not localhost — fetch resolves it to ::1 and hangs
-const ADMIN_USER = process.env.CONFLUENCE_USER ?? 'admin';
-const ADMIN_PASSWORD = process.env.CONFLUENCE_PASSWORD ?? 'admin';
-const SECOND_USER = process.env.CONFLUENCE_USER2 ?? 'autotest2';
-const SECOND_PASSWORD = process.env.CONFLUENCE_PASSWORD2 ?? 'automation123';
-const READONLY_USER = process.env.CONFLUENCE_USER3 ?? 'autotest3';
-const READONLY_PASSWORD = process.env.CONFLUENCE_PASSWORD3 ?? 'automation123';
+const ADMIN_USER = 'admin';
+const ADMIN_PASSWORD = 'admin';
+const SECOND_USER = 'autotest2';
+const SECOND_PASSWORD = 'automation123';
+const READONLY_USER = 'autotest3';
+const READONLY_PASSWORD = 'automation123';
 // atlassian-plugin.xml's "key" attribute — stable across plugin releases (see environments/confluence/artifacts)
 const PLUGIN_KEY = 'onlyoffice.onlyoffice-confluence-plugin';
 
@@ -173,11 +173,11 @@ async function completeSetupWizard(): Promise<void> {
       path = '/setup/setupadministrator.action';
       body = new URLSearchParams({
         atl_token,
-        username: process.env.CONFLUENCE_USER ?? 'admin',
+        username: ADMIN_USER,
         fullName: 'Confluence Admin',
         email: 'admin@example.com',
-        password: process.env.CONFLUENCE_PASSWORD ?? 'admin',
-        confirm: process.env.CONFLUENCE_PASSWORD ?? 'admin',
+        password: ADMIN_PASSWORD,
+        confirm: ADMIN_PASSWORD,
         'setup-next-button': 'Next',
       });
     } else {

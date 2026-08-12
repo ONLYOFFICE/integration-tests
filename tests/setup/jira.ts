@@ -6,12 +6,12 @@ import type { DocumentServer } from './document-server';
 
 const stack = stackFor('jira');
 const JIRA_URL = 'http://127.0.0.1:8080';
-const ADMIN_USER = process.env.JIRA_USER ?? 'admin';
-const ADMIN_PASSWORD = process.env.JIRA_PASSWORD ?? 'admin';
-const SECOND_USER = process.env.JIRA_USER2 ?? 'autotest2';
-const SECOND_PASSWORD = process.env.JIRA_PASSWORD2 ?? 'automation123';
-const READONLY_USER = process.env.JIRA_USER3 ?? 'autotest3';
-const READONLY_PASSWORD = process.env.JIRA_PASSWORD3 ?? 'automation123';
+const ADMIN_USER = 'admin';
+const ADMIN_PASSWORD = 'admin';
+const SECOND_USER = 'autotest2';
+const SECOND_PASSWORD = 'automation123';
+const READONLY_USER = 'autotest3';
+const READONLY_PASSWORD = 'automation123';
 // atlassian-plugin.xml's "key" attribute — stable across plugin releases (see environments/jira/artifacts)
 const PLUGIN_KEY = 'onlyoffice.onlyoffice-jira-app';
 // Must match TEST_PROJECT_KEY/NAME in packages/adapter-jira/src/jira.adapter.ts — the project

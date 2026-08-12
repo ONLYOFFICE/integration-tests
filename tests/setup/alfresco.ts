@@ -66,18 +66,9 @@ export async function setup(ds: DocumentServer): Promise<void> {
   console.log('[alfresco] Verifying plugin ↔ Document Server connection...');
   const adapter = new AlfrescoAdapter({
     baseUrl: alfrescoUrl,
-    admin: {
-      username: process.env.ALFRESCO_USER ?? 'admin',
-      password: process.env.ALFRESCO_PASSWORD ?? 'admin',
-    },
-    secondUser: {
-      username: process.env.ALFRESCO_USER2 ?? 'autotest2',
-      password: process.env.ALFRESCO_PASSWORD2 ?? 'automation123',
-    },
-    readOnlyUser: {
-      username: process.env.ALFRESCO_USER3 ?? 'autotest3',
-      password: process.env.ALFRESCO_PASSWORD3 ?? 'automation123',
-    },
+    admin: { username: 'admin', password: 'admin' },
+    secondUser: { username: 'autotest2', password: 'automation123' },
+    readOnlyUser: { username: 'autotest3', password: 'automation123' },
   });
   await adapter.validateDocumentServer();
 
