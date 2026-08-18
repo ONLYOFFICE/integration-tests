@@ -1,0 +1,121 @@
+name: E2E
+
+on:
+  workflow_call:
+    inputs:
+      system:
+        description: 'Playwright project and environments/ directory: alfresco | confluence | jira | liferay'
+        required: true
+        type: string
+      artifact_name:
+        description: 'Actions artifact of the calling run holding the plugin build(s) to install'
+        required: true
+        type: string
+      documentserver_image:
+        description: 'Document Server image'
+        type: string
+        default: 'onlyoffice/documentserver:latest'
+      env_overrides:
+        description: >-
+          Extra environment for the stand, one KEY=VALUE per line. The product version variable
+          differs per system: CONFLUENCE_VERSION, JIRA_VERSION, ALFRESCO_VERSION, LIFERAY_IMAGE.
+        type: string
+        default: ''
+      timeout_minutes:
+        description: >-
+          Backstop for a hung job. A green run is ~15-20 min and the stand's own waits give up
+          at ~45 min (see tests/setup/), so this only fires when something is stuck outside them.
+        type: number
+        default: 60
+
+jobs:
+  e2e:
+    name: ${{ inputs.system }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    env:
+      CI: 'true'
+      DOCUMENTSERVER_IMAGE: ${{ inputs.documentserver_image }}
+      OIT_RUN_ID: gh${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - name: Checkout integration-tests
+        uses: actions/checkout@v7
+        with:
+          repository: ONLYOFFICE/integration-tests
+          ref: ${{ github.job_workflow_sha }}
+
+      - name: Download plugin build
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: environments/${{ inputs.system }}/artifacts
+
+      - name: Apply stand env overrides
+        if: inputs.env_overrides != ''
+        env:
+          ENV_OVERRIDES: ${{ inputs.env_overrides }}
+        run: printf '%s\n' "$ENV_OVERRIDES" >> "$GITHUB_ENV"
+
+      - name: Run summary
+        env:
+          ENV_OVERRIDES: ${{ inputs.env_overrides }}
+        run: |
+          {
+            echo "| | |"
+            echo "|---|---|"
+            echo "| System | \`${{ inputs.system }}\` |"
+            echo "| Document Server | \`$DOCUMENTSERVER_IMAGE\` |"
+            echo "| integration-tests | \`$(git rev-parse --short HEAD)\` |"
+            echo "| Plugin | \`$(ls -m "environments/${{ inputs.system }}/artifacts")\` |"
+            if [ -n "$ENV_OVERRIDES" ]; then
+              echo "| Stand env | \`$(printf '%s' "$ENV_OVERRIDES" | tr '\n' ' ')\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Prepare runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          sudo systemctl stop postgresql apache2 nginx 2>/dev/null || true
+          df -h /
+
+      - name: Run E2E tests
+        timeout-minutes: 45
+        run: npx playwright test --project=${{ inputs.system }} --reporter=github,list,html
+
+      - name: Collect container logs
+        if: failure()
+        run: |
+          docker ps -a --filter 'name=onlyoffice-it-' --format 'table {{.Names}}\t{{.Status}}'
+          for container in $(docker ps -aq --filter 'name=onlyoffice-it-'); do
+            echo "::group::docker logs $(docker inspect -f '{{.Name}}' "$container")"
+            docker logs --tail 200 "$container" 2>&1 || true
+            echo "::endgroup::"
+          done
+
+      - name: Remove leftover stands
+        if: always()
+        run: npm run stand:cleanup || true
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ inputs.system }}
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
