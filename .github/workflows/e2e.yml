@@ -46,7 +46,7 @@ jobs:
           ref: ${{ github.job_workflow_sha }}
 
       - name: Download plugin build
-        uses: actions/download-artifact@v8
+        uses: christopherhx/gitea-download-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
           path: environments/${{ inputs.system }}/artifacts
