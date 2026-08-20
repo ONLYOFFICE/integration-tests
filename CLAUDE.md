@@ -70,9 +70,14 @@ Each Playwright invocation targets exactly one system (`tests/global.setup.ts`
 throws otherwise — see Commands above).
 
 1. `startDocumentServer()` starts a Document Server container with a fresh JWT
-   secret, then auto-detects the host IP by exec'ing a hairpin curl from inside
-   the DS container against each of the host's addresses — this IP is what both the
-   browser and the host-system containers use to reach each other and DS.
+   secret, then auto-detects the host IP — the address both the browser and the
+   host-system containers use to reach each other and DS. Candidates are the
+   machine's own interfaces plus the docker host as seen from inside a container
+   (network gateways, `host.docker.internal`), the latter being the only workable
+   answer when the tests themselves run inside a container (CI). Each candidate is
+   probed from both sides — a hairpin curl from the DS container and a `fetch` from
+   the test process — since an address only one side can reach silently breaks either
+   the browser or the DS callbacks. `OIT_HOST_IP` pins it if the probe comes up empty.
 2. The selected system (`tests/setup/registry.ts`, derived from the required
    `--project=` in Playwright's argv), via `tests/setup/<system>.ts`: spin up that
    system's `docker-compose.yml`, install the ONLYOFFICE plugin artifact(s), point

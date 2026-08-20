@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import * as dns from 'node:dns/promises';
 import * as os from 'node:os';
 import { DS_CONTAINER, sh } from '../stack';
 
@@ -10,7 +11,10 @@ export interface DocumentServer {
   host: string;
 }
 
-function hostIpCandidates(): string[] {
+const IPV4 = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/;
+
+/** Addresses of the machine the tests (and the browser) run on */
+function localCandidates(): string[] {
   const candidates: string[] = [];
   for (const infos of Object.values(os.networkInterfaces())) {
     for (const info of infos ?? []) {
@@ -23,24 +27,98 @@ function hostIpCandidates(): string[] {
 }
 
 /**
- * Picks the host IP that containers can use to reach published ports:
- * from inside the DS container we probe its own healthcheck through every
- * machine address (hairpin: container → host IP → published port → container).
+ * Where the published ports live as seen from inside a container: the gateway of every
+ * network the DS container is attached to (i.e. the docker host on that bridge) and
+ * host.docker.internal. This is the only usable answer when the tests themselves run
+ * inside a container (Gitea/GitHub runners with a mounted docker socket): there the
+ * machine's own interfaces are the *runner's* addresses, and nothing is published on them.
  */
-function detectHostIp(): string {
-  const candidates = hostIpCandidates();
-  for (const ip of candidates) {
-    const code = sh(
-      `docker exec ${DS_CONTAINER} curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://${ip}/healthcheck`,
-      { ignoreErrors: true },
-    );
-    if (code === '200') {
-      return ip;
+function dockerHostCandidates(): string[] {
+  const candidates: string[] = [];
+
+  const resolved = sh(`docker exec ${DS_CONTAINER} getent hosts host.docker.internal`, { ignoreErrors: true });
+  const hostGateway = resolved.match(IPV4)?.[1];
+  if (hostGateway) {
+    candidates.push(hostGateway);
+  }
+
+  const gateways = sh(
+    `docker inspect -f "{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}" ${DS_CONTAINER}`,
+    { ignoreErrors: true },
+  );
+  for (const gateway of gateways.split(/\s+/)) {
+    if (IPV4.test(gateway)) {
+      candidates.push(gateway);
     }
   }
+
+  return candidates;
+}
+
+/** Address of a remote docker daemon (DOCKER_HOST=tcp://docker:2376 — docker-in-docker CI) */
+async function dockerDaemonCandidates(): Promise<string[]> {
+  const dockerHost = process.env.DOCKER_HOST;
+  if (!dockerHost || !/^(tcp|ssh|https?):\/\//.test(dockerHost)) {
+    return [];
+  }
+  const { hostname } = new URL(dockerHost);
+  if (IPV4.test(hostname)) {
+    return [hostname];
+  }
+  try {
+    const { address } = await dns.lookup(hostname, { family: 4 });
+    return [address];
+  } catch {
+    return [];
+  }
+}
+
+/** Can the tests (and therefore the browser) reach the published DS port at this address? */
+async function reachableFromTests(ip: string): Promise<boolean> {
+  try {
+    const response = await fetch(`http://${ip}/healthcheck`, { signal: AbortSignal.timeout(5_000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Can a container reach the published DS port at this address? (hairpin: DS → host IP → DS) */
+function reachableFromContainers(ip: string): boolean {
+  const code = sh(
+    `docker exec ${DS_CONTAINER} curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://${ip}/healthcheck`,
+    { ignoreErrors: true },
+  );
+  return code === '200';
+}
+
+/**
+ * Picks the address that both sides can use to reach published ports: the browser
+ * (running next to the tests) and the containers (DS itself, the host system's stack).
+ * Every candidate is probed from both sides — an address that only one of them can
+ * reach is worse than useless, since it silently breaks the DS callbacks or the browser.
+ *
+ * OIT_HOST_IP pins the answer when the automatic probe can't find one.
+ */
+async function detectHostIp(): Promise<string> {
+  if (process.env.OIT_HOST_IP) {
+    return process.env.OIT_HOST_IP;
+  }
+
+  const candidates = [...new Set([...localCandidates(), ...dockerHostCandidates(), ...(await dockerDaemonCandidates())])];
+  const rejected: string[] = [];
+  for (const ip of candidates) {
+    const fromContainers = reachableFromContainers(ip);
+    const fromTests = await reachableFromTests(ip);
+    if (fromContainers && fromTests) {
+      return ip;
+    }
+    rejected.push(`${ip} (containers: ${fromContainers ? 'ok' : 'no'}, tests: ${fromTests ? 'ok' : 'no'})`);
+  }
+
   throw new Error(
-    `Could not find a host IP reachable from containers (candidates: ${candidates.join(', ') || 'none'}). ` +
-      'Check the firewall.',
+    `Could not find a host IP reachable from both the containers and the tests. Tried: ${rejected.join('; ') || 'nothing'}. ` +
+      'Check the firewall, or pin the address with OIT_HOST_IP=<ip>.',
   );
 }
 
@@ -81,13 +159,13 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   console.log(`[document-server] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port 80)...`);
   sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
   sh(
-    `docker run -d --name ${DS_CONTAINER} -p 80:80 ` +
+    `docker run -d --name ${DS_CONTAINER} -p 80:80 --add-host host.docker.internal:host-gateway ` +
       `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=Authorization ${dsImage}`,
   );
 
   await waitForDocumentServer(300_000);
 
-  const host = detectHostIp();
+  const host = await detectHostIp();
   const url = `http://${host}/`;
   console.log(`[document-server] Host IP: ${host} (Document Server: ${url})`);
 
