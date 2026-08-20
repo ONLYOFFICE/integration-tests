@@ -5,7 +5,7 @@ import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
 
 const stack = stackFor('confluence');
-const CONFLUENCE_URL = 'http://127.0.0.1:8090'; // not localhost — fetch resolves it to ::1 and hangs
+let CONFLUENCE_URL = 'http://127.0.0.1:8090';
 const ADMIN_USER = 'admin';
 const ADMIN_PASSWORD = 'admin';
 const SECOND_USER = 'autotest2';
@@ -383,6 +383,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
     return;
   }
 
+  CONFLUENCE_URL = `http://${ds.host}:8090`;
+
   console.log(
     `[confluence] Starting Confluence ${process.env.CONFLUENCE_VERSION ?? '10.2.14'} (project ${stack.COMPOSE_PROJECT})...`,
   );
@@ -420,7 +422,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
   // Browser-driven tests must reach Confluence via the same host it now considers its own base
   // URL (ATL_PROXY_NAME above) — otherwise the login SPA's XSRF/origin check rejects the request
   // ("Something went wrong") even though the plain REST calls above (no real browser) are fine.
-  process.env.CONFLUENCE_URL = `http://${ds.host}:8090`;
+  process.env.CONFLUENCE_URL = CONFLUENCE_URL;
   console.log('[confluence] Stack ready');
 }
 

@@ -5,7 +5,7 @@ import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
 
 const stack = stackFor('jira');
-const JIRA_URL = 'http://127.0.0.1:8080';
+let JIRA_URL = 'http://127.0.0.1:8080';
 const ADMIN_USER = 'admin';
 const ADMIN_PASSWORD = 'admin';
 const SECOND_USER = 'autotest2';
@@ -417,6 +417,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
     return;
   }
 
+  JIRA_URL = `http://${ds.host}:8080`;
+
   console.log(`[jira] Starting Jira ${process.env.JIRA_VERSION ?? '11.3.4'} (project ${stack.COMPOSE_PROJECT})...`);
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} up -d --quiet-pull`, {
     env: {
@@ -455,7 +457,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
   // Browser-driven tests must reach Jira via the same host it now considers its own base URL
   // (ATL_PROXY_NAME above) — otherwise the login SPA's XSRF/origin check rejects the request,
   // same reasoning as Confluence's CONFLUENCE_URL below.
-  process.env.JIRA_URL = `http://${ds.host}:8080`;
+  process.env.JIRA_URL = JIRA_URL;
   console.log('[jira] Stack ready');
 }
 

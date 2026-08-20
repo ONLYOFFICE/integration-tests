@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as os from 'node:os';
-import { DS_CONTAINER, sh, waitForHttp } from '../stack';
+import { DS_CONTAINER, sh } from '../stack';
 
 export interface DocumentServer {
   /** Document Server URL, reachable from both the browser and the host systems' containers */
@@ -44,6 +44,23 @@ function detectHostIp(): string {
   );
 }
 
+/** Waits until Document Server reports itself healthy inside its own container */
+async function waitForDocumentServer(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let last = 'no response';
+  while (Date.now() < deadline) {
+    last = sh(`docker exec ${DS_CONTAINER} curl -s --max-time 5 http://127.0.0.1/healthcheck`, { ignoreErrors: true }).trim();
+    if (last === 'true') {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+
+  throw new Error(
+    `Document Server not ready after ${Math.round(timeoutMs / 1000)}s (healthcheck inside ${DS_CONTAINER}: ${last})`,
+  );
+}
+
 /**
  * Spins up a disposable Document Server container (image — DOCUMENTSERVER_IMAGE) with
  * a generated JWT secret, and detects the host IP shared by the browser and the host
@@ -67,12 +84,8 @@ export async function startDocumentServer(): Promise<DocumentServer> {
     `docker run -d --name ${DS_CONTAINER} -p 80:80 ` +
       `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=Authorization ${dsImage}`,
   );
-  await waitForHttp(
-    'Document Server',
-    `http://localhost:80/healthcheck`,
-    async (r) => r.ok && (await r.text()).trim() === 'true',
-    300_000,
-  );
+
+  await waitForDocumentServer(300_000);
 
   const host = detectHostIp();
   const url = `http://${host}/`;
