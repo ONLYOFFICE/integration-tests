@@ -62,7 +62,11 @@ let reusingExisting = false;
  * new file immediately, rather than racing it during Liferay's own startup. Only log lines from
  * after the matching "Processing <artifactName>" line are inspected, so unrelated ERRORs from
  * other bundles earlier in the (already-running) container don't trip this up. Throws on an
- * ERROR line appearing before STARTED, or on timeout.
+ * ERROR line appearing before STARTED, or on timeout — with describeDeployState() attached, since
+ * a timeout on its own can't tell "the file never arrived" from "Liferay ignored it".
+ *
+ * The log is read via containerLogs(), which merges stderr in: stack.sh() captures stdout only,
+ * and depending on the image Liferay's lines come out on either stream.
  */
 async function installPlugin(): Promise<void> {
   const artifactsDir = path.join(stack.ENV_DIR, 'artifacts');
@@ -78,7 +82,7 @@ async function installPlugin(): Promise<void> {
   const marker = `Processing ${artifactName}`;
   const deadline = Date.now() + 120_000;
   for (;;) {
-    const logs = stack.sh(`docker logs ${LIFERAY_CONTAINER}`, { ignoreErrors: true });
+    const logs = containerLogs();
     const processingIndex = logs.lastIndexOf(marker);
     if (processingIndex !== -1) {
       const sinceProcessing = logs.slice(processingIndex);
@@ -100,7 +104,7 @@ async function installPlugin(): Promise<void> {
       }
     }
     if (Date.now() > deadline) {
-      throw new Error(`[liferay] Plugin ${artifactName} did not start within 120s`);
+      throw new Error(`[liferay] Plugin ${artifactName} did not start within 120s\n${describeDeployState()}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
@@ -127,7 +131,7 @@ async function installLicense(): Promise<void> {
   const marker = `Processing ${LICENSE_FILE}`;
   const deadline = Date.now() + 120_000;
   for (;;) {
-    const logs = stack.sh(`docker logs ${LIFERAY_CONTAINER}`, { ignoreErrors: true });
+    const logs = containerLogs();
     const processingIndex = logs.lastIndexOf(marker);
     if (processingIndex !== -1) {
       const sinceProcessing = logs.slice(processingIndex);
@@ -140,7 +144,7 @@ async function installLicense(): Promise<void> {
       }
     }
     if (Date.now() > deadline) {
-      throw new Error('[liferay] DXP license did not register within 120s');
+      throw new Error(`[liferay] DXP license did not register within 120s\n${describeDeployState()}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
@@ -468,8 +472,41 @@ function shipToContainer(source: string, targetDir: string): void {
   if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
     throw new Error(`[liferay] No file to ship into ${targetDir}: ${source} is missing`);
   }
+  const target = `${targetDir}/${path.basename(source)}`;
   stack.sh(`docker exec -u root ${LIFERAY_CONTAINER} mkdir -p ${targetDir}`);
-  stack.sh(`docker cp "${source}" ${LIFERAY_CONTAINER}:${targetDir}/${path.basename(source)}`);
+  stack.sh(`docker cp "${source}" ${LIFERAY_CONTAINER}:${target}`);
+  // `docker cp` writes the file as root and keeps the source's mode, so an artifact that arrived
+  // from CI with a restrictive mode lands unreadable for the user Liferay actually runs as — its
+  // AutoDeployScanner then logs "Unable to read" and never processes the file. Hand it over to
+  // that user (uid/gid read from the container instead of hardcoding "liferay", which only exists
+  // under that name in some of the images) and make it readable.
+  const uid = stack.sh(`docker exec ${LIFERAY_CONTAINER} id -u`);
+  const gid = stack.sh(`docker exec ${LIFERAY_CONTAINER} id -g`);
+  stack.sh(`docker exec -u root ${LIFERAY_CONTAINER} chown ${uid}:${gid} ${target}`);
+  stack.sh(`docker exec -u root ${LIFERAY_CONTAINER} chmod 644 ${target}`);
+}
+
+/** Liferay's log, both streams — see the note on stderr in installPlugin's wait loop */
+function containerLogs(): string {
+  return stack.sh(`docker logs ${LIFERAY_CONTAINER} 2>&1`, { ignoreErrors: true });
+}
+
+/**
+ * What to attach to a "never picked it up" timeout: whether the file is actually sitting in the
+ * watched directory (and with which owner/mode), plus the tail of Liferay's log — without this
+ * the timeout says nothing about which half of the hand-off broke.
+ */
+function describeDeployState(): string {
+  const listing = stack.sh(`docker exec ${LIFERAY_CONTAINER} ls -l ${DEPLOY_DIR} ${OSGI_CONFIGS_DIR}`, {
+    ignoreErrors: true,
+  });
+  const tail = containerLogs().split('\n').slice(-40).join('\n');
+  return [
+    `--- ${DEPLOY_DIR} and ${OSGI_CONFIGS_DIR}:`,
+    listing || '(unavailable)',
+    '--- last log lines:',
+    tail || '(unavailable)',
+  ].join('\n');
 }
 
 export async function setup(ds: DocumentServer): Promise<void> {
