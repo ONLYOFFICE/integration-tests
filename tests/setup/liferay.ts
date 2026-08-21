@@ -495,18 +495,32 @@ function containerLogs(): string {
  * What to attach to a "never picked it up" timeout: whether the file is actually sitting in the
  * watched directory (and with which owner/mode), plus the tail of Liferay's log — without this
  * the timeout says nothing about which half of the hand-off broke.
+ *
+ * The whole log is dumped into test-results/ as well (uploaded as an artifact by
+ * .github/workflows/e2e.yml). This is the only chance to keep it: global.teardown removes the
+ * stack as soon as setup fails, so by the time anything downstream — the workflow's own "Collect
+ * container logs" step included — goes looking for the container, it is already gone.
  */
 function describeDeployState(): string {
   const listing = stack.sh(`docker exec ${LIFERAY_CONTAINER} ls -l ${DEPLOY_DIR} ${OSGI_CONFIGS_DIR}`, {
     ignoreErrors: true,
   });
-  const tail = containerLogs().split('\n').slice(-40).join('\n');
-  return [
+  const logs = containerLogs();
+  const report = [
     `--- ${DEPLOY_DIR} and ${OSGI_CONFIGS_DIR}:`,
     listing || '(unavailable)',
     '--- last log lines:',
-    tail || '(unavailable)',
-  ].join('\n');
+    logs.split('\n').slice(-40).join('\n') || '(unavailable)',
+  ];
+  try {
+    const logFile = path.resolve(__dirname, '..', '..', 'test-results', `${LIFERAY_CONTAINER}.log`);
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.writeFileSync(logFile, logs);
+    report.push(`--- full log saved to ${logFile}`);
+  } catch (error) {
+    report.push(`--- could not save the full log: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return report.join('\n');
 }
 
 export async function setup(ds: DocumentServer): Promise<void> {
