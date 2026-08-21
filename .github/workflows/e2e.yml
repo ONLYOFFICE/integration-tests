@@ -27,6 +27,15 @@ on:
           at ~45 min (see tests/setup/), so this only fires when something is stuck outside them.
         type: number
         default: 60
+    secrets:
+      liferay_license:
+        description: >-
+          Liferay DXP license XML, verbatim or base64-encoded (base64 is what reliably survives
+          being stored as a single-line secret). Only needed when env_overrides points
+          LIFERAY_IMAGE at a liferay/dxp image — the free liferay/portal image runs unlicensed.
+          Kept a secret rather than an input so it never lands in the logs; handed to the stand
+          as LIFERAY_LICENSE (tests/setup/liferay.ts writes it to the artifacts directory).
+        required: false
 
 jobs:
   e2e:
@@ -93,6 +102,8 @@ jobs:
 
       - name: Run E2E tests
         timeout-minutes: 45
+        env:
+          LIFERAY_LICENSE: ${{ secrets.liferay_license }}
         run: npx playwright test --project=${{ inputs.system }} --reporter=github,list,html
 
       - name: Collect container logs

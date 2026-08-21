@@ -402,6 +402,33 @@ async function grantEditorPortletAccess(): Promise<void> {
 }
 
 /**
+ * Materializes the DXP license from LIFERAY_LICENSE into environments/liferay/artifacts (which is
+ * gitignored), so everything downstream — requireLicenseIfDxp, installLicense — only ever deals
+ * with the file and doesn't care where it came from. The variable is the only workable channel in
+ * CI: the license can't be checked into the repository and is kept as a secret instead (see
+ * .github/workflows/e2e.yml). It holds the license XML itself, either verbatim or base64-encoded —
+ * base64 is what survives being carried around as a single-line secret, so anything that doesn't
+ * start with '<' is decoded as base64. An existing artifacts/license.xml is deliberately
+ * overwritten: an explicitly passed license wins over whatever a previous run left behind.
+ */
+function materializeLicenseFromEnv(): void {
+  const license = process.env.LIFERAY_LICENSE;
+  if (!license?.trim()) {
+    return;
+  }
+  const xml = license.trimStart().startsWith('<')
+    ? license
+    : Buffer.from(license.replace(/\s/g, ''), 'base64').toString('utf8');
+  if (!xml.trimStart().startsWith('<')) {
+    throw new Error('[liferay] LIFERAY_LICENSE is neither license XML nor base64-encoded license XML');
+  }
+  const artifactsDir = path.join(stack.ENV_DIR, 'artifacts');
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, LICENSE_FILE), xml);
+  console.log(`[liferay] License taken from LIFERAY_LICENSE and written to artifacts/${LICENSE_FILE}`);
+}
+
+/**
  * DXP (`liferay/dxp:...`) is Liferay's paid distribution and refuses to run unlicensed, unlike
  * the free `liferay/portal` image — checked up front so a missing license file surfaces as a
  * clear setup error instead of a confusing runtime failure once the stack is already up.
@@ -410,11 +437,13 @@ function requireLicenseIfDxp(): void {
   if (!isDxpImage(process.env.LIFERAY_IMAGE!)) {
     return;
   }
+  materializeLicenseFromEnv();
   const licensePath = path.join(stack.ENV_DIR, 'artifacts', LICENSE_FILE);
   if (!fs.existsSync(licensePath)) {
     throw new Error(
       `[liferay] LIFERAY_IMAGE (${process.env.LIFERAY_IMAGE}) is a DXP (paid) image — ` +
-        `place a valid license file at environments/liferay/artifacts/${LICENSE_FILE}`,
+        `place a valid license file at environments/liferay/artifacts/${LICENSE_FILE} ` +
+        'or pass its contents (verbatim or base64) via LIFERAY_LICENSE',
     );
   }
 }
