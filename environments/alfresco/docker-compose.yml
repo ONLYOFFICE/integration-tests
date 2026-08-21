@@ -54,7 +54,6 @@ services:
       start_period: 1m
     volumes:
       - /usr/local/tomcat/alf_data
-      - ./artifacts/onlyoffice-integration-repo.amp:/usr/local/tomcat/amps/onlyoffice-integration-repo.amp:ro
     extends:
       file: commons/base.yaml
       service: alfresco
@@ -79,8 +78,6 @@ services:
   share:
     image: docker.io/alfresco/alfresco-share:${ALFRESCO_VERSION:-26.1.0}
     mem_limit: 1g
-    volumes:
-      - ./artifacts/onlyoffice-integration-share.amp:/usr/local/tomcat/amps_share/onlyoffice-integration-share.amp:ro
     environment:
       CSRF_FILTER_ORIGIN: http://${ALFRESCO_HOST:-localhost}:8080
       CSRF_FILTER_REFERER: http://${ALFRESCO_HOST:-localhost}:8080/share/.*

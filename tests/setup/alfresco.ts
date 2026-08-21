@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { AlfrescoAdapter } from '@adapters/alfresco';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
@@ -43,6 +45,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   await waitForHttp('Alfresco', readyProbe, (r) => r.ok, 900_000);
 
   console.log('[alfresco] Installing plugin AMP packages and restarting alfresco/share...');
+  shipAmp(ALFRESCO_CONTAINER, 'onlyoffice-integration-repo.amp', '/usr/local/tomcat/amps');
+  shipAmp(SHARE_CONTAINER, 'onlyoffice-integration-share.amp', '/usr/local/tomcat/amps_share');
   stack.sh(
     `docker exec -u root ${ALFRESCO_CONTAINER} bash -c ` +
       `"java -jar ${MMT} install /usr/local/tomcat/amps/onlyoffice-integration-repo.amp /usr/local/tomcat/webapps/alfresco -nobackup -force"`,
@@ -87,6 +91,23 @@ export async function setup(ds: DocumentServer): Promise<void> {
   // Playwright workers inherit process.env — the address will reach the fixtures
   process.env.ALFRESCO_URL = alfrescoUrl;
   console.log('[alfresco] Stack ready');
+}
+
+/**
+ * Ships one AMP from environments/alfresco/artifacts into a running container.
+ * `docker cp` rather than a compose bind mount on purpose: the daemon resolves mount sources on
+ * the docker host, so when the tests themselves run in a container (CI) the artifacts path exists
+ * only inside that container and the daemon silently mounts an empty directory in its place —
+ * alfresco-mmt then fails with "File Not Found, ...amp (Is a directory)". `docker cp` streams the
+ * file through the API from wherever the client sees it, so both layouts work.
+ */
+function shipAmp(container: string, amp: string, targetDir: string): void {
+  const source = path.join(stack.ENV_DIR, 'artifacts', amp);
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
+    throw new Error(`[alfresco] No ${amp} found in ${path.dirname(source)} — see artifacts/README.md`);
+  }
+  stack.sh(`docker exec -u root ${container} mkdir -p ${targetDir}`);
+  stack.sh(`docker cp "${source}" ${container}:${targetDir}/${amp}`);
 }
 
 /** Stops and fully removes the Alfresco stack along with its volumes */
