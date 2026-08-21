@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { EDITOR_PORTLET_ID } from '@adapters/liferay';
 import { stackFor, waitForHttp } from '../stack';
@@ -27,6 +28,10 @@ const READONLY_PASSWORD = 'automation123';
 // Liferay's paid distribution is published as `liferay/dxp` (vs. the free `liferay/portal`) and
 // enforces a license — see requireLicenseIfDxp/installLicense.
 const LICENSE_FILE = 'license.xml';
+// The two watched directories inside the container everything is shipped into — see
+// shipToContainer for why this goes over `docker cp` rather than a compose bind mount.
+const DEPLOY_DIR = '/opt/liferay/deploy';
+const OSGI_CONFIGS_DIR = '/opt/liferay/osgi/configs';
 
 function isDxpImage(image: string): boolean {
   return image.includes('/dxp');
@@ -48,9 +53,9 @@ const CONFIG_PID = 'com.onlyoffice.liferay.docs.config.OnlyOfficeConfiguration';
 let reusingExisting = false;
 
 /**
- * Copies the plugin artifact from environments/liferay/artifacts into environments/liferay/deploy
- * (bind-mounted to /opt/liferay/deploy — see docker-compose.yml), triggering Liferay's hot deploy,
- * then waits for the AutoDeployScanner to pick it up and start its OSGi bundle — e.g.
+ * Ships the plugin artifact from environments/liferay/artifacts into the container's
+ * /opt/liferay/deploy (see shipToContainer), triggering Liferay's hot deploy, then waits for the
+ * AutoDeployScanner to pick it up and start its OSGi bundle — e.g.
  *   AutoDeployDir: Processing liferay-docs-3.1.0.jar
  *   BundleStartStopLogger: STARTED com.onlyoffice.liferay-docs_3.1.0 [1391]
  * Done after the web interface is up so the deploy watcher is already running and can pick up the
@@ -61,15 +66,13 @@ let reusingExisting = false;
  */
 async function installPlugin(): Promise<void> {
   const artifactsDir = path.join(stack.ENV_DIR, 'artifacts');
-  const deployDir = path.join(stack.ENV_DIR, 'deploy');
   const artifactName = fs.readdirSync(artifactsDir).find((name) => name.endsWith('.jar'));
   if (!artifactName) {
     throw new Error(`[liferay] No plugin .jar found in ${artifactsDir} — see artifacts/README.md`);
   }
 
   console.log(`[liferay] Deploying plugin ${artifactName}...`);
-  fs.mkdirSync(deployDir, { recursive: true });
-  fs.copyFileSync(path.join(artifactsDir, artifactName), path.join(deployDir, artifactName));
+  shipToContainer(path.join(artifactsDir, artifactName), DEPLOY_DIR);
 
   console.log(`[liferay] Waiting for ${artifactName} to start...`);
   const marker = `Processing ${artifactName}`;
@@ -104,9 +107,9 @@ async function installPlugin(): Promise<void> {
 }
 
 /**
- * Copies the DXP license (environments/liferay/artifacts/license.xml, checked to exist by
- * requireLicenseIfDxp) into environments/liferay/deploy (bind-mounted to /opt/liferay/deploy —
- * see docker-compose.yml), the same AutoDeployScanner hot-deploy path used for the plugin jar.
+ * Ships the DXP license (environments/liferay/artifacts/license.xml, checked to exist by
+ * requireLicenseIfDxp) into the container's /opt/liferay/deploy (see shipToContainer), the same
+ * AutoDeployScanner hot-deploy path used for the plugin jar.
  * Unlike a plugin bundle, a license is picked up by Felix fileinstall's directory watcher rather
  * than the OSGi bundle lifecycle, e.g.:
  *   AutoDeployScanner: Processing license.xml
@@ -117,12 +120,8 @@ async function installPlugin(): Promise<void> {
  * up. Throws if validation fails or registration isn't confirmed within the timeout.
  */
 async function installLicense(): Promise<void> {
-  const licensePath = path.join(stack.ENV_DIR, 'artifacts', LICENSE_FILE);
-  const deployDir = path.join(stack.ENV_DIR, 'deploy');
-
   console.log(`[liferay] Deploying DXP license ${LICENSE_FILE}...`);
-  fs.mkdirSync(deployDir, { recursive: true });
-  fs.copyFileSync(licensePath, path.join(deployDir, LICENSE_FILE));
+  shipToContainer(path.join(stack.ENV_DIR, 'artifacts', LICENSE_FILE), DEPLOY_DIR);
 
   console.log('[liferay] Waiting for the license to register...');
   const marker = `Processing ${LICENSE_FILE}`;
@@ -149,16 +148,14 @@ async function installLicense(): Promise<void> {
 
 /**
  * Points the plugin at the Document Server (and enables Force Save — see forceSave below) by
- * dropping a Configuration Admin file into environments/liferay/configs (bind-mounted to
- * /opt/liferay/osgi/configs — see docker-compose.yml). Liferay ships Felix fileinstall watching
- * that directory (polling every few seconds by default) and applies the config live, triggering
+ * shipping a Configuration Admin file into the container's /opt/liferay/osgi/configs (see
+ * shipToContainer). Liferay ships Felix fileinstall watching that directory (polling every few
+ * seconds by default) and applies the config live, triggering
  * OnlyOfficeConfigManager's `modified="readConfig"` — no restart and no admin login needed,
  * unlike Jira/Confluence's REST-based plugin configuration.
  */
 async function configureDocumentServer(ds: DocumentServer): Promise<void> {
   console.log('[liferay] Configuring the plugin to use the Document Server...');
-  const configsDir = path.join(stack.ENV_DIR, 'configs');
-  fs.mkdirSync(configsDir, { recursive: true });
 
   // Felix's typed-properties ".config" syntax — see
   // https://felix.apache.org/documentation/subprojects/apache-felix-file-install.html
@@ -175,7 +172,13 @@ async function configureDocumentServer(ds: DocumentServer): Promise<void> {
     `forceSave="true"`,
     '',
   ].join('\n');
-  fs.writeFileSync(path.join(configsDir, `${CONFIG_PID}.config`), config);
+  // Written to a scratch directory first: unlike the plugin jar and the license there is no
+  // artifacts file to ship, and the config has to exist as a local file for `docker cp` to stream.
+  const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'oit-liferay-'));
+  const configFile = path.join(staging, `${CONFIG_PID}.config`);
+  fs.writeFileSync(configFile, config);
+  shipToContainer(configFile, OSGI_CONFIGS_DIR);
+  fs.rmSync(staging, { recursive: true, force: true });
 
   // Felix fileinstall's default poll interval for the configs directory is a few seconds — give
   // it a comfortable margin to pick up the file and for OnlyOfficeConfigManager to reload before
@@ -446,6 +449,27 @@ function requireLicenseIfDxp(): void {
         'or pass its contents (verbatim or base64) via LIFERAY_LICENSE',
     );
   }
+}
+
+/**
+ * Ships one file into a watched directory of the running Liferay container (DEPLOY_DIR for the
+ * plugin jar and the license, OSGI_CONFIGS_DIR for the plugin configuration).
+ *
+ * `docker cp` rather than a compose bind mount on purpose: the daemon resolves mount sources on
+ * the docker host, so when the tests themselves run in a container (CI) the paths under
+ * environments/liferay/ exist only inside that container and the daemon silently mounts an empty
+ * directory in its place. The file then lands next to the test process, Liferay's watchers never
+ * see it, and it surfaces as "Plugin ... did not start within 120s" — or, for the configuration,
+ * not at all: the plugin simply never learns the Document Server's address. `docker cp` streams
+ * the file through the API from wherever the client sees it, so both layouts work. Same fix as
+ * shipAmp in tests/setup/alfresco.ts.
+ */
+function shipToContainer(source: string, targetDir: string): void {
+  if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
+    throw new Error(`[liferay] No file to ship into ${targetDir}: ${source} is missing`);
+  }
+  stack.sh(`docker exec -u root ${LIFERAY_CONTAINER} mkdir -p ${targetDir}`);
+  stack.sh(`docker cp "${source}" ${LIFERAY_CONTAINER}:${targetDir}/${path.basename(source)}`);
 }
 
 export async function setup(ds: DocumentServer): Promise<void> {

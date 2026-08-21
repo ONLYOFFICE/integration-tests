@@ -14,6 +14,5 @@ services:
             LIFERAY_SETUP_PERIOD_WIZARD_PERIOD_ENABLED: "false"
         ports:
             - "8080:8080"
-        volumes:
-            - ./deploy:/opt/liferay/deploy
-            - ./configs:/opt/liferay/osgi/configs
+        # No bind mounts for the plugin jar / license / plugin configuration: they are shipped into
+        # the running container with `docker cp` instead — see shipToContainer in tests/setup/liferay.ts.
