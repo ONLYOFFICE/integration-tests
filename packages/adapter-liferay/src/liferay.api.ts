@@ -25,6 +25,19 @@ const READONLY_ROLE_NAME = 'onlyoffice-autotest-readonly';
  * (secondUser opening a file it doesn't own) stuck in read-only mode.
  */
 const EDITOR_ROLE_NAME = 'onlyoffice-autotest-editor';
+/** The resource whose permissions setIndividualPermissions grants — a document, as the portal models it */
+const DL_FILE_ENTRY_RESOURCE = 'com.liferay.document.library.kernel.model.DLFileEntry';
+
+/**
+ * Whether a headless REST response means "this Liferay doesn't offer that" rather than "the call
+ * failed": before 7.3 the headless modules ship read-only, so a write comes back either as 405
+ * (the path is routed, but only for GET — e.g. POST /user-accounts) or 404 (not routed at all —
+ * e.g. anything under /documents/{id}/permissions). Callers that see this fall back to the classic
+ * JSONWS API — see LiferayApi.jsonws.
+ */
+function isReadOnlyHeadless(response: Response): boolean {
+  return response.status === 404 || response.status === 405;
+}
 
 /** Liferay Headless Delivery / Headless Admin User REST API client */
 export class LiferayApi {
@@ -66,15 +79,19 @@ export class LiferayApi {
         // JSONWS get-current-user carries companyId but no siteBriefs — hence both calls.
         this.request('/o/headless-admin-user/v1.0/my-user-account').then(
           (response) =>
-            response.json() as Promise<{ siteBriefs: { id: number; externalReferenceCode: string }[] }>,
+            response.json() as Promise<{ siteBriefs: { id: number; name: string; externalReferenceCode?: string }[] }>,
         ),
         this.request('/api/jsonws/user/get-current-user').then(
           (response) => response.json() as Promise<{ companyId: string }>,
         ),
       ]).then(([{ siteBriefs }, { companyId }]) => {
         // "L_GUEST" is Liferay's stable external reference code for the default Guest site,
-        // constant across installations regardless of the site's numeric id.
-        const guest = siteBriefs.find((site) => site.externalReferenceCode === 'L_GUEST');
+        // constant across installations regardless of the site's numeric id — but siteBriefs only
+        // started carrying externalReferenceCode in 7.3, so on 7.2 the site's own name (untranslated
+        // and unchanged in a fresh install) is all there is to go by.
+        const guest =
+          siteBriefs.find((site) => site.externalReferenceCode === 'L_GUEST') ??
+          siteBriefs.find((site) => site.name === 'Guest');
         if (!guest) {
           throw new Error('Could not find the Guest site in my-user-account siteBriefs');
         }
@@ -241,6 +258,30 @@ export class LiferayApi {
   }
 
   /**
+   * POSTs to a classic JSONWS endpoint — the API every legacy fallback in this class falls back
+   * *to*, since JSONWS predates the headless modules and offers writes on every version.
+   *
+   * Two things it is unforgiving about, both surfacing as an error that looks like something else
+   * entirely:
+   *  - a method is matched on its *complete* set of parameter names, so an omitted parameter isn't
+   *    left at its default — it fails the lookup with HTTP 404 "No JSON web service action with
+   *    path ...", which reads like a missing endpoint rather than a malformed call
+   *  - array and map parameters are parsed as JSON, so a list has to be sent as ["A","B"]; "A,B"
+   *    comes back as jodd's "Syntax error! Invalid char"
+   */
+  private async jsonws(path: string, params: Record<string, string>): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/jsonws/${path}`, {
+      method: 'POST',
+      headers: this.authHeader,
+      body: new URLSearchParams(params),
+    });
+    if (!response.ok) {
+      throw new Error(`Liferay JSONWS ${path}: ${response.status} ${await response.text()}`);
+    }
+    return response.json();
+  }
+
+  /**
    * Creates `roleName` (a plain Regular role — permission scope, not a login credential) if it
    * doesn't exist yet and makes `memberEmail` its only member. Looked up by name via the classic
    * JSONWS role service, since headless-admin-user's `filter` query param on GET /roles doesn't
@@ -260,21 +301,8 @@ export class LiferayApi {
         );
         const found = (lookup.ok ? await lookup.json() : {}) as { roleId?: string };
 
-        const id = found.roleId
-          ? Number(found.roleId)
-          : ((await this.request('/o/headless-admin-user/v1.0/roles', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: roleName, roleType: 'regular' }),
-            }).then((response) => response.json())) as { id: number }).id;
-
-        const { id: userId } = (await this.request(
-          `/o/headless-admin-user/v1.0/user-accounts/by-email-address/${encodeURIComponent(memberEmail)}`,
-        ).then((response) => response.json())) as { id: number };
-        // Idempotent: re-associating an existing member is a no-op, so no need to check first
-        await this.request(`/o/headless-admin-user/v1.0/roles/${id}/association/user-account/${userId}`, {
-          method: 'POST',
-        });
+        const id = found.roleId ? Number(found.roleId) : await this.createRole(roleName);
+        await this.addRoleMember(id, await this.userIdByEmail(memberEmail));
 
         return id;
       })();
@@ -284,14 +312,106 @@ export class LiferayApi {
   }
 
   /**
+   * Creates a Regular role. On 7.2, where headless-admin-user won't create one (see
+   * isReadOnlyHeadless), over JSONWS instead: the empty className/classPK and type 1
+   * (RoleConstants.TYPE_REGULAR) are what make it a plain company-wide role, and the title and
+   * description maps have to be sent even though nothing here wants a localized title.
+   */
+  private async createRole(roleName: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/o/headless-admin-user/v1.0/roles`, {
+      method: 'POST',
+      headers: { ...this.authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: roleName, roleType: 'regular' }),
+    });
+    if (response.ok) {
+      return ((await response.json()) as { id: number }).id;
+    }
+    if (!isReadOnlyHeadless(response)) {
+      throw new Error(`Liferay POST /roles (${roleName}): ${response.status} ${await response.text()}`);
+    }
+
+    const { roleId } = (await this.jsonws('role/add-role', {
+      className: '',
+      classPK: '0',
+      name: roleName,
+      titleMap: JSON.stringify({ en_US: roleName }),
+      descriptionMap: '{}',
+      type: '1',
+      subtype: '',
+    })) as { roleId: string };
+    return Number(roleId);
+  }
+
+  /** Adds one member to a role. Idempotent on both paths — re-adding an existing member is a no-op */
+  private async addRoleMember(roleId: number, userId: number): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/o/headless-admin-user/v1.0/roles/${roleId}/association/user-account/${userId}`,
+      { method: 'POST', headers: this.authHeader },
+    );
+    if (response.ok) {
+      return;
+    }
+    if (!isReadOnlyHeadless(response)) {
+      throw new Error(`Liferay POST role ${roleId} association ${userId}: ${response.status} ${await response.text()}`);
+    }
+
+    await this.jsonws('user/add-role-users', { roleId: String(roleId), userIds: JSON.stringify([userId]) });
+  }
+
+  /**
+   * The numeric user id behind an email address — the same id both APIs below identify a user by
+   * (a headless UserAccount's `id` is the portal's userId).
+   *
+   * A 404 from the headless lookup is ambiguous: on 7.2 it means the endpoint isn't routed at all,
+   * on later versions that no such account exists. Falling back on it either way costs nothing —
+   * the accounts asked for here are the ones tests/setup/liferay.ts created, and a genuinely
+   * missing one fails on the JSONWS lookup right after with "No User exists with the key".
+   */
+  private async userIdByEmail(email: string): Promise<number> {
+    const headless = await fetch(
+      `${this.baseUrl}/o/headless-admin-user/v1.0/user-accounts/by-email-address/${encodeURIComponent(email)}`,
+      { headers: this.authHeader },
+    );
+    if (headless.ok) {
+      return ((await headless.json()) as { id: number }).id;
+    }
+    if (!isReadOnlyHeadless(headless)) {
+      throw new Error(`Liferay GET user-accounts by email ${email}: ${headless.status} ${await headless.text()}`);
+    }
+
+    const { companyId } = await this.account();
+    const response = await this.request(
+      `/api/jsonws/user/get-user-by-email-address?companyId=${companyId}&emailAddress=${encodeURIComponent(email)}`,
+    );
+    return Number(((await response.json()) as { userId: string }).userId);
+  }
+
+  /**
    * Grants `roleName` the given actions on this one document, without touching any of the
    * document's other role grants (fetched and re-sent as-is) — notably the Owner role's own
    * UPDATE, which is what keeps the file editable by its creator at all.
+   *
+   * 7.2's headless-delivery has no permissions sub-resource at all (404 on the GET below), so
+   * there the grant goes in over JSONWS — see setIndividualPermissions.
    */
-  private async grantDocumentPermission(fileEntryId: string, roleName: string, actionIds: string[]): Promise<void> {
-    const { items } = (await this.request(`/o/headless-delivery/v1.0/documents/${fileEntryId}/permissions`).then(
-      (response) => response.json(),
-    )) as { items: DocumentPermission[] };
+  private async grantDocumentPermission(
+    fileEntryId: string,
+    roleName: string,
+    roleId: number,
+    actionIds: string[],
+  ): Promise<void> {
+    const current = await fetch(`${this.baseUrl}/o/headless-delivery/v1.0/documents/${fileEntryId}/permissions`, {
+      headers: this.authHeader,
+    });
+    if (isReadOnlyHeadless(current)) {
+      await this.setIndividualPermissions(fileEntryId, roleId, actionIds);
+      return;
+    }
+    if (!current.ok) {
+      throw new Error(`Liferay GET document ${fileEntryId} permissions: ${current.status} ${await current.text()}`);
+    }
+
+    const { items } = (await current.json()) as { items: DocumentPermission[] };
     const permissions: DocumentPermission[] = [...items.filter((item) => item.roleName !== roleName), { roleName, actionIds }];
     await this.request(`/o/headless-delivery/v1.0/documents/${fileEntryId}/permissions`, {
       method: 'PUT',
@@ -300,10 +420,33 @@ export class LiferayApi {
     });
   }
 
+  /**
+   * grantDocumentPermission's path for 7.2 (see there): sets one role's actions on one
+   * DLFileEntry over JSONWS. Same semantics as the headless PUT it stands in for — it replaces
+   * that one role's grants on that one file and leaves every other role's (the Owner's UPDATE
+   * included) alone, so nothing has to be read back and re-sent here.
+   *
+   * DOWNLOAD is dropped from the action set: DLFileEntry has no such action before 7.3, and asking
+   * for one Liferay doesn't know fails the whole call with "NoSuchResourceActionException:
+   * ...DLFileEntry#DOWNLOAD" — granting none of the valid actions in the list either. On 7.2 it's
+   * VIEW that gates reading a file's content anyway.
+   */
+  private async setIndividualPermissions(fileEntryId: string, roleId: number, actionIds: string[]): Promise<void> {
+    const { companyId, guestSiteId } = await this.account();
+    await this.jsonws('resourcepermission/set-individual-resource-permissions', {
+      groupId: String(guestSiteId),
+      companyId: String(companyId),
+      name: DL_FILE_ENTRY_RESOURCE,
+      primKey: fileEntryId,
+      roleId: String(roleId),
+      actionIds: JSON.stringify(actionIds.filter((actionId) => actionId !== 'DOWNLOAD')),
+    });
+  }
+
   /** Grants readOnlyUser VIEW+DOWNLOAD (but not UPDATE) on this one document */
   async setReadOnlyFor(fileEntryId: string, readOnlyUserEmail: string): Promise<void> {
-    await this.ensureRoleWithMember(READONLY_ROLE_NAME, readOnlyUserEmail);
-    await this.grantDocumentPermission(fileEntryId, READONLY_ROLE_NAME, ['VIEW', 'DOWNLOAD']);
+    const roleId = await this.ensureRoleWithMember(READONLY_ROLE_NAME, readOnlyUserEmail);
+    await this.grantDocumentPermission(fileEntryId, READONLY_ROLE_NAME, roleId, ['VIEW', 'DOWNLOAD']);
   }
 
   /**
@@ -311,7 +454,7 @@ export class LiferayApi {
    * uploads is otherwise only editable by the admin account that created it (see EDITOR_ROLE_NAME).
    */
   async grantEditAccessFor(fileEntryId: string, secondUserEmail: string): Promise<void> {
-    await this.ensureRoleWithMember(EDITOR_ROLE_NAME, secondUserEmail);
-    await this.grantDocumentPermission(fileEntryId, EDITOR_ROLE_NAME, ['VIEW', 'DOWNLOAD', 'UPDATE']);
+    const roleId = await this.ensureRoleWithMember(EDITOR_ROLE_NAME, secondUserEmail);
+    await this.grantDocumentPermission(fileEntryId, EDITOR_ROLE_NAME, roleId, ['VIEW', 'DOWNLOAD', 'UPDATE']);
   }
 }

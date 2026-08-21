@@ -330,29 +330,125 @@ async function completeInitialAdminPasswordReset(): Promise<void> {
   adminPassword = ADMIN_TARGET_PASSWORD;
 }
 
+/** Basic-auth header for the admin account — see the note on adminPassword at the top of this file */
+function adminAuthHeader(): Record<string, string> {
+  return { Authorization: `Basic ${Buffer.from(`${ADMIN_USER}:${adminPassword}`).toString('base64')}` };
+}
+
+/** GETs a classic JSONWS endpoint as admin and returns its parsed response */
+async function jsonwsGet(path: string): Promise<any> {
+  const response = await fetch(`${process.env.LIFERAY_URL}${path}`, { headers: adminAuthHeader() });
+  if (!response.ok) {
+    throw new Error(`[liferay] JSONWS ${path} failed: HTTP ${response.status} ${await response.text()}`);
+  }
+  return response.json();
+}
+
 /**
- * Creates an unprivileged test account via the Headless Admin User REST API (bundled OOTB since
- * 7.3+, no extra module to install). Unlike Alfresco/Jira, this API takes `password` directly on
- * the create body, so the account is immediately usable — no separate "set password" step.
- * Screen names (`alternateName`) can't contain '@' or '.', so it's derived from the email's
+ * Creates an unprivileged test account, over whichever of two APIs the running Liferay offers.
+ *
+ * The Headless Admin User REST API (the path taken first) can create accounts on 7.3+ and takes
+ * `password` right on the create body, so the account is immediately usable — no separate "set
+ * password" step. On 7.2 that same module ships read-only: `user-accounts` answers GET only, so
+ * the POST comes back as "HTTP 405 Method Not Allowed" (and its `by-email-address` lookup isn't
+ * routed at all, so the existence check above 404s there rather than answering). That version
+ * creates the account over the classic JSONWS API instead — see addUserViaJsonws.
+ *
+ * Screen names (`alternateName`) can't contain '@' or '.', so they're derived from the email's
  * local part rather than reusing the login itself.
  */
 async function ensureUser(email: string, password: string, givenName: string, familyName: string): Promise<void> {
-  const authHeader = { Authorization: `Basic ${Buffer.from(`${ADMIN_USER}:${adminPassword}`).toString('base64')}` };
   const existing = await fetch(
     `${process.env.LIFERAY_URL}/o/headless-admin-user/v1.0/user-accounts/by-email-address/${encodeURIComponent(email)}`,
-    { headers: authHeader },
+    { headers: adminAuthHeader() },
   );
   if (existing.ok) {
     return;
   }
 
   console.log(`[liferay] Creating test account (${email})...`);
-  const alternateName = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
+  const screenName = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
   const response = await fetch(`${process.env.LIFERAY_URL}/o/headless-admin-user/v1.0/user-accounts`, {
     method: 'POST',
-    headers: { ...authHeader, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ emailAddress: email, password, alternateName, givenName, familyName }),
+    headers: { ...adminAuthHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emailAddress: email, password, alternateName: screenName, givenName, familyName }),
+  });
+  if (response.ok) {
+    return;
+  }
+  if (response.status !== 404 && response.status !== 405) {
+    throw new Error(`[liferay] Failed to create test account ${email}: HTTP ${response.status} ${await response.text()}`);
+  }
+
+  console.log(
+    `[liferay] Headless Admin User is read-only on this Liferay (HTTP ${response.status} on create) — using JSONWS instead`,
+  );
+  await addUserViaJsonws(email, password, givenName, familyName, screenName);
+}
+
+/**
+ * ensureUser's path for Liferay 7.2 (see there): creates the account over the classic JSONWS API.
+ *
+ * JSONWS resolves a service method by matching the *complete* set of parameter names — leaving one
+ * out doesn't leave it at its default, it fails the lookup outright with "No JSON web service
+ * action with path /user/add-user and method POST" under HTTP 404, which reads like a missing
+ * endpoint rather than a malformed call. So every parameter of 7.2's UserService.addUser is
+ * spelled out below, the ones carrying nothing here included: the empty id arrays (no site /
+ * organization / role / user group membership — same as what the headless path creates) and
+ * facebookId/openId, which later releases dropped from the signature. That version skew is exactly
+ * why this stays 7.2's path and not the shared one.
+ *
+ * The account is usable as-is: its password is set here, and Liferay's "change your password on
+ * first login" prompt is disabled by the password-policy overrides in docker-compose.yml — see
+ * completeInitialAdminPasswordReset for what that prompt costs when it does appear.
+ */
+async function addUserViaJsonws(
+  email: string,
+  password: string,
+  firstName: string,
+  lastName: string,
+  screenName: string,
+): Promise<void> {
+  const { companyId } = await jsonwsGet('/api/jsonws/user/get-current-user');
+  const existing = await fetch(
+    `${process.env.LIFERAY_URL}/api/jsonws/user/get-user-by-email-address` +
+      `?companyId=${companyId}&emailAddress=${encodeURIComponent(email)}`,
+    { headers: adminAuthHeader() },
+  );
+  if (existing.ok) {
+    return;
+  }
+
+  const response = await fetch(`${process.env.LIFERAY_URL}/api/jsonws/user/add-user`, {
+    method: 'POST',
+    headers: adminAuthHeader(),
+    body: new URLSearchParams({
+      companyId,
+      autoPassword: 'false',
+      password1: password,
+      password2: password,
+      autoScreenName: 'false',
+      screenName,
+      emailAddress: email,
+      facebookId: '0',
+      openId: '',
+      locale: 'en_US',
+      firstName,
+      middleName: '',
+      lastName,
+      prefixId: '0',
+      suffixId: '0',
+      male: 'true',
+      birthdayMonth: '0',
+      birthdayDay: '1',
+      birthdayYear: '1970',
+      jobTitle: '',
+      groupIds: '',
+      organizationIds: '',
+      roleIds: '',
+      userGroupIds: '',
+      sendEmail: 'false',
+    }),
   });
   if (!response.ok) {
     throw new Error(`[liferay] Failed to create test account ${email}: HTTP ${response.status} ${await response.text()}`);
@@ -371,17 +467,8 @@ async function ensureUser(email: string, password: string, givenName: string, fa
  */
 async function grantEditorPortletAccess(): Promise<void> {
   console.log('[liferay] Granting the "User" role access to the ONLYOFFICE editor portlet...');
-  const authHeader = { Authorization: `Basic ${Buffer.from(`${ADMIN_USER}:${adminPassword}`).toString('base64')}` };
-  const jsonws = async (path: string): Promise<any> => {
-    const response = await fetch(`${process.env.LIFERAY_URL}${path}`, { headers: authHeader });
-    if (!response.ok) {
-      throw new Error(`[liferay] JSONWS ${path} failed: HTTP ${response.status} ${await response.text()}`);
-    }
-    return response.json();
-  };
-
-  const { companyId } = await jsonws('/api/jsonws/user/get-current-user');
-  const { roleId: userRoleId } = await jsonws(
+  const { companyId } = await jsonwsGet('/api/jsonws/user/get-current-user');
+  const { roleId: userRoleId } = await jsonwsGet(
     `/api/jsonws/role/get-role?companyId=${companyId}&name=${encodeURIComponent('User')}`,
   );
 
@@ -397,7 +484,7 @@ async function grantEditorPortletAccess(): Promise<void> {
     });
     const response = await fetch(`${process.env.LIFERAY_URL}/api/jsonws/resourcepermission/add-resource-permission`, {
       method: 'POST',
-      headers: authHeader,
+      headers: adminAuthHeader(),
       body: params,
     });
     if (!response.ok) {
