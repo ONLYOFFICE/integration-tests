@@ -7,6 +7,7 @@ export interface DocumentServer {
   /** Document Server URL, reachable from both the browser and the host systems' containers */
   url: string;
   secret: string;
+  header: string;
   /** Host IP shared by the browser and the host systems' docker containers */
   host: string;
 }
@@ -144,13 +145,13 @@ async function waitForDocumentServer(timeoutMs: number): Promise<void> {
  * a generated JWT secret, and detects the host IP shared by the browser and the host
  * systems' containers. A shared step for all systems — independent of which one is tested.
  */
-export async function startDocumentServer(): Promise<DocumentServer> {
+export async function startDocumentServer(header = 'Authorization'): Promise<DocumentServer> {
   if (process.env.DOCUMENTSERVER_URL) {
     const url = process.env.DOCUMENTSERVER_URL;
     const secret = process.env.DOCUMENTSERVER_SECRET ?? '';
     const host = new URL(url).hostname;
     console.log(`[document-server] Using existing Document Server at ${url} (DOCUMENTSERVER_URL is set) — skipping startup`);
-    return { url, secret, host };
+    return { url, secret, host, header };
   }
 
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
@@ -160,7 +161,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
   sh(
     `docker run -d --name ${DS_CONTAINER} -p 80:80 --add-host host.docker.internal:host-gateway ` +
-      `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=Authorization ${dsImage}`,
+      `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=${header} ${dsImage}`,
   );
 
   await waitForDocumentServer(300_000);
@@ -169,7 +170,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   const url = `http://${host}/`;
   console.log(`[document-server] Host IP: ${host} (Document Server: ${url})`);
 
-  return { url, secret, host };
+  return { url, secret, host, header };
 }
 
 /** Stops and removes the Document Server container along with its anonymous volumes */
