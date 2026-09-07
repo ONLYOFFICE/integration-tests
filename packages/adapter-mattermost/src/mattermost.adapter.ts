@@ -132,6 +132,10 @@ export class MattermostAdapter implements HostAdapter {
       page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30_000 }).catch(() => {}),
       page.click('#saveSetting'),
     ]);
+
+    if (page.url().includes('/login')) {
+      throw new Error(`[mattermost] Login failed for ${user.username} — still on the login page`);
+    }
   }
 
   async createFile(name: string, type: FileType): Promise<FileRef> {
