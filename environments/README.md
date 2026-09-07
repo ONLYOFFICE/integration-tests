@@ -8,7 +8,8 @@ environments/
     docker-compose.yml   # Alfresco stack (repo, share, postgres, solr, ...)
     commons/base.yaml    # traefik proxy and routes (from acs-deployment)
     artifacts/           # onlyoffice-alfresco plugin builds (see README there)
-  confluence/            # (future systems follow the same pattern)
+  confluence/            # (other systems follow the same pattern)
+  mattermost/            # Mattermost + Postgres stack
 ```
 
 The stack is managed by `tests/global.setup.ts` / `global.teardown.ts`: spun up
