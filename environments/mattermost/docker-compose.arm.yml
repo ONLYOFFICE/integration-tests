@@ -9,3 +9,5 @@ services:
         platform: linux/arm64
         build:
             context: ./arm64
+            args:
+                MM_VERSION: ${MATTERMOST_VERSION}
