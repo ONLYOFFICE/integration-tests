@@ -21,7 +21,7 @@ const TEST_TEAM_NAME = 'integration-tests';
 const TEST_CHANNEL_NAME = 'integration-tests';
 
 if (process.argv.includes('--project=mattermost')) {
-  process.env.DOCUMENTSERVER_HEADER = DES_JWT_HEADER;
+  process.env.DOCUMENTSERVER_HEADER ??= DES_JWT_HEADER;
 }
 
 const MATTERMOST_CONTAINER = `${stack.COMPOSE_PROJECT}-mattermost-1`;
@@ -198,9 +198,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   MATTERMOST_URL = `http://${ds.host}:8065`;
 
   const buildArm = process.env.MATTERMOST_ARM === 'true';
-  const image =
-    process.env.MATTERMOST_IMAGE ??
-    (buildArm ? 'onlyoffice-it-mattermost-arm64:local' : `mattermost/mattermost-team-edition:${process.env.MATTERMOST_VERSION ?? '11.10.1'}`);
+  const version = process.env.MATTERMOST_VERSION ?? '11.10.1';
+  const image = process.env.MATTERMOST_IMAGE ?? (buildArm ? 'onlyoffice-it-mattermost-arm64:local' : `mattermost/mattermost-team-edition:${version}`);
   const composeFiles = [stack.COMPOSE_FILE, ...(buildArm ? ['docker-compose.arm.yml'] : [])];
   composeFileArgs = composeFiles.map((file) => `-f ${file}`).join(' ');
 
@@ -209,6 +208,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
     env: {
       MATTERMOST_IMAGE: image,
       MATTERMOST_HOST: ds.host,
+      MATTERMOST_VERSION: version,
     },
   });
 
