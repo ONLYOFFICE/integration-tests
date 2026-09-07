@@ -3,6 +3,7 @@ import { AlfrescoAdapter } from '@adapters/alfresco';
 import { ConfluenceAdapter } from '@adapters/confluence';
 import { JiraAdapter } from '@adapters/jira';
 import { LiferayAdapter } from '@adapters/liferay';
+import { MattermostAdapter } from '@adapters/mattermost';
 
 // Each Playwright project from playwright.config.ts has its own adapter.
 // A new system = a new registerAdapter + a new project in the config.
@@ -44,6 +45,17 @@ registerAdapter('liferay', () => {
     },
     secondUser: { username: 'autotest2@example.com', password: 'automation123' },
     readOnlyUser: { username: 'autotest3@example.com', password: 'automation123' },
+  });
+});
+
+registerAdapter('mattermost', () => {
+  return new MattermostAdapter({
+    baseUrl: process.env.MATTERMOST_URL ?? 'http://127.0.0.1:8065',
+    admin: { username: 'admin', password: 'adminadmin' },
+    secondUser: { username: 'autotest1', password: 'automation123' },
+    readOnlyUser: { username: 'autotest2', password: 'automation123' },
+    channelId: process.env.MATTERMOST_CHANNEL_ID ?? '',
+    teamId: process.env.MATTERMOST_TEAM_ID ?? '',
   });
 });
 

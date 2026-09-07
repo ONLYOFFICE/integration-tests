@@ -8,6 +8,8 @@
     "test:confluence": "playwright test --project=confluence",
     "test:jira": "playwright test --project=jira",
     "test:liferay": "playwright test --project=liferay",
+    "test:mattermost": "playwright test --project=mattermost",
+    "test:mattermost:arm": "MATTERMOST_ARM=true playwright test --project=mattermost",
     "test:smoke": "playwright test --grep @smoke",
     "report": "playwright show-report",
     "stand:cleanup": "node scripts/cleanup-stands.mjs",

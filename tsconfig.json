@@ -15,7 +15,8 @@
       "@adapters/alfresco": ["packages/adapter-alfresco/src/index.ts"],
       "@adapters/confluence": ["packages/adapter-confluence/src/index.ts"],
       "@adapters/jira": ["packages/adapter-jira/src/index.ts"],
-      "@adapters/liferay": ["packages/adapter-liferay/src/index.ts"]
+      "@adapters/liferay": ["packages/adapter-liferay/src/index.ts"],
+      "@adapters/mattermost": ["packages/adapter-mattermost/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "tests/**/*.ts", "playwright.config.ts"]

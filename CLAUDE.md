@@ -20,6 +20,7 @@ npm run test:alfresco              # run against Alfresco only
 npm run test:confluence            # run against Confluence only
 npm run test:jira                  # run against Jira only
 npm run test:liferay               # run against Liferay only
+npm run test:mattermost            # run against Mattermost only
 npm run test:smoke -- --project=<system>       # fast subset, tag @smoke, for one system
 npx playwright test <file> --project=<system>        # single spec file
 npx playwright test -g "<title>" --project=<system>  # single test by title substring

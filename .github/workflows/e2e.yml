@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       system:
-        description: 'Playwright project and environments/ directory: alfresco | confluence | jira | liferay'
+        description: 'Playwright project and environments/ directory: alfresco | confluence | jira | liferay | mattermost'
         required: true
         type: string
       artifact_name:
@@ -18,7 +18,8 @@ on:
       env_overrides:
         description: >-
           Extra environment for the stand, one KEY=VALUE per line. The product version variable
-          differs per system: CONFLUENCE_VERSION, JIRA_VERSION, ALFRESCO_VERSION, LIFERAY_IMAGE.
+          differs per system: CONFLUENCE_VERSION, JIRA_VERSION, ALFRESCO_VERSION, LIFERAY_IMAGE,
+          MATTERMOST_VERSION.
         type: string
         default: ''
       timeout_minutes:
