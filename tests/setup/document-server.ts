@@ -145,7 +145,8 @@ async function waitForDocumentServer(timeoutMs: number): Promise<void> {
  * a generated JWT secret, and detects the host IP shared by the browser and the host
  * systems' containers. A shared step for all systems — independent of which one is tested.
  */
-export async function startDocumentServer(header = 'Authorization'): Promise<DocumentServer> {
+export async function startDocumentServer(): Promise<DocumentServer> {
+  const header = process.env.DOCUMENTSERVER_HEADER ?? 'Authorization';
   if (process.env.DOCUMENTSERVER_URL) {
     const url = process.env.DOCUMENTSERVER_URL;
     const secret = process.env.DOCUMENTSERVER_SECRET ?? '';
