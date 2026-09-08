@@ -40,5 +40,10 @@ export default defineConfig({
       name: 'liferay',
       testMatch: ['shared/**/*.spec.ts', 'liferay/**/*.spec.ts'],
     },
+    {
+      name: 'mattermost',
+      testMatch: ['shared/**/*.spec.ts', 'mattermost/**/*.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts'],
+    },
   ],
 });

@@ -1,0 +1,52 @@
+version: '3'
+
+services:
+    mattermost:
+        image: ${MATTERMOST_IMAGE}
+        # The official image is amd64-only. Some Docker Desktop versions/configs silently fall back
+        # to amd64-under-emulation for a pull/up with no matching native manifest (just a warning);
+        # others refuse outright ("no matching manifest for linux/arm64/v8") unless the platform is
+        # explicit — pin it here rather than relying on whichever behavior happens to be active.
+        # docker-compose.arm.yml overrides this back to the host's own native platform for the
+        # locally-built arm64/Dockerfile image (npm run test:mattermost:arm) — only that service,
+        # not postgres, which already ships genuine multi-arch images.
+        platform: linux/amd64
+        environment:
+            MM_SQLSETTINGS_DRIVERNAME: postgres
+            MM_SQLSETTINGS_DATASOURCE: "postgres://mattermost:mattermost@postgres:5432/mattermost?sslmode=disable&connect_timeout=10"
+            MM_SERVICESETTINGS_SITEURL: "http://${MATTERMOST_HOST}:8065"
+            MM_TEAMSETTINGS_ENABLEOPENSERVER: "true"
+            MM_TEAMSETTINGS_ENABLEUSERCREATION: "true"
+            MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+            MM_EMAILSETTINGS_REQUIREEMAILVERIFICATION: "false"
+            MM_PLUGINSETTINGS_ENABLE: "true"
+            MM_PLUGINSETTINGS_ENABLEUPLOADS: "true"
+            MM_FILESETTINGS_MAXFILESIZE: "524288000"
+            MM_LOGSETTINGS_ENABLECONSOLE: "true"
+            MM_LOGSETTINGS_CONSOLEJSON: "false"
+        ports:
+            - "8065:8065"
+        depends_on:
+            postgres:
+                condition: service_healthy
+        networks:
+            - mattermost
+
+    postgres:
+        image: postgres:15
+        environment:
+            POSTGRES_DB: mattermost
+            POSTGRES_USER: mattermost
+            POSTGRES_PASSWORD: mattermost
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -d $$POSTGRES_DB -U $$POSTGRES_USER"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 5s
+        networks:
+            - mattermost
+
+networks:
+    mattermost:
+        name: mattermost

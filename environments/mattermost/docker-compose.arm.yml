@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+    mattermost:
+        image: ${MATTERMOST_IMAGE}
+        # Overrides the base file's platform: linux/amd64 — this image is built fresh below for
+        # the host's own (arm64) architecture, not pulled, so forcing amd64 here would make Docker
+        # try to run a native arm64 build as if it were amd64.
+        platform: linux/arm64
+        build:
+            context: ./arm64
+            args:
+                MM_VERSION: ${MATTERMOST_VERSION}
