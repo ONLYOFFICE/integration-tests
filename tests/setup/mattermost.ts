@@ -203,6 +203,10 @@ export async function setup(ds: DocumentServer): Promise<void> {
   const composeFiles = [stack.COMPOSE_FILE, ...(buildArm ? ['docker-compose.arm.yml'] : [])];
   composeFileArgs = composeFiles.map((file) => `-f ${file}`).join(' ');
 
+  process.env.MATTERMOST_IMAGE = image;
+  process.env.MATTERMOST_VERSION = version;
+  process.env.MATTERMOST_HOST = ds.host;
+
   console.log(`[mattermost] Starting Mattermost (${image}, project ${stack.COMPOSE_PROJECT})...`);
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} ${composeFileArgs} up -d --quiet-pull${buildArm ? ' --build' : ''}`, {
     env: {
