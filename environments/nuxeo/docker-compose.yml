@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+    nuxeo:
+        # Built fresh every run from ./Dockerfile on top of ${NUXEO_IMAGE} (see there) — a fixed
+        # tag, like onlyoffice-it-mattermost-arm64:local, so successive runs overwrite rather than
+        # pile up images. `docker compose down` leaves images alone; that's fine here.
+        image: onlyoffice-it-nuxeo:local
+        build:
+            context: .
+            args:
+                NUXEO_IMAGE: ${NUXEO_IMAGE}
+        environment:
+            # Nuxeo Connect registration — required to download nuxeo-web-ui below. The two-line
+            # CLID is passed as one line with `--` in place of the line break; the entrypoint turns
+            # it back into /var/lib/nuxeo/instance.clid.
+            NUXEO_CLID: ${NUXEO_CLID}
+            # Installed by the image's entrypoint on first start (`nuxeoctl mp-install`, which takes
+            # Connect package names and local zip paths alike). nuxeo-web-ui is the ONLYOFFICE
+            # package's declared dependency; the zip is the one Dockerfile bakes in from artifacts/.
+            NUXEO_PACKAGES: "nuxeo-web-ui /opt/nuxeo/local-packages/${NUXEO_PLUGIN_PACKAGE}"
+            JAVA_OPTS: "-Xmx2g"
+        ports:
+            # Same host port as Jira/Liferay — fine, only one system's stand is ever up per run.
+            - "8080:8080"
