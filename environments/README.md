@@ -10,6 +10,7 @@ environments/
     artifacts/           # onlyoffice-alfresco plugin builds (see README there)
   confluence/            # (other systems follow the same pattern)
   mattermost/            # Mattermost + Postgres stack
+  nuxeo/                 # Nuxeo (single container; Dockerfile bakes the package build in)
 ```
 
 The stack is managed by `tests/global.setup.ts` / `global.teardown.ts`: spun up

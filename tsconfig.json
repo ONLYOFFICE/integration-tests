@@ -16,7 +16,8 @@
       "@adapters/confluence": ["packages/adapter-confluence/src/index.ts"],
       "@adapters/jira": ["packages/adapter-jira/src/index.ts"],
       "@adapters/liferay": ["packages/adapter-liferay/src/index.ts"],
-      "@adapters/mattermost": ["packages/adapter-mattermost/src/index.ts"]
+      "@adapters/mattermost": ["packages/adapter-mattermost/src/index.ts"],
+      "@adapters/nuxeo": ["packages/adapter-nuxeo/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "tests/**/*.ts", "playwright.config.ts"]

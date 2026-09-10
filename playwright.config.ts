@@ -45,5 +45,11 @@ export default defineConfig({
       testMatch: ['shared/**/*.spec.ts', 'mattermost/**/*.spec.ts'],
       testIgnore: ['shared/force-save.spec.ts'],
     },
+    {
+      name: 'nuxeo',
+      testMatch: ['shared/**/*.spec.ts', 'nuxeo/**/*.spec.ts'],
+      // The package's callback service has no force-save handler (only editing/save/closed)
+      testIgnore: ['shared/force-save.spec.ts'],
+    },
   ],
 });

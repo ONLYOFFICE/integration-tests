@@ -4,6 +4,7 @@ import { ConfluenceAdapter } from '@adapters/confluence';
 import { JiraAdapter } from '@adapters/jira';
 import { LiferayAdapter } from '@adapters/liferay';
 import { MattermostAdapter } from '@adapters/mattermost';
+import { NuxeoAdapter } from '@adapters/nuxeo';
 
 // Each Playwright project from playwright.config.ts has its own adapter.
 // A new system = a new registerAdapter + a new project in the config.
@@ -56,6 +57,15 @@ registerAdapter('mattermost', () => {
     readOnlyUser: { username: 'autotest2', password: 'automation123' },
     channelId: process.env.MATTERMOST_CHANNEL_ID ?? '',
     teamId: process.env.MATTERMOST_TEAM_ID ?? '',
+  });
+});
+
+registerAdapter('nuxeo', () => {
+  return new NuxeoAdapter({
+    baseUrl: process.env.NUXEO_URL ?? 'http://127.0.0.1:8080',
+    admin: { username: 'Administrator', password: 'Administrator' },
+    secondUser: { username: 'autotest2', password: 'automation123' },
+    readOnlyUser: { username: 'autotest3', password: 'automation123' },
   });
 });
 
