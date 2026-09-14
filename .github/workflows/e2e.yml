@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       system:
-        description: 'Playwright project and environments/ directory: alfresco | confluence | jira | liferay | mattermost'
+        description: 'Playwright project and environments/ directory: alfresco | confluence | jira | liferay | mattermost | nuxeo'
         required: true
         type: string
       artifact_name:
@@ -19,7 +19,7 @@ on:
         description: >-
           Extra environment for the stand, one KEY=VALUE per line. The product version variable
           differs per system: CONFLUENCE_VERSION, JIRA_VERSION, ALFRESCO_VERSION, LIFERAY_IMAGE,
-          MATTERMOST_VERSION.
+          MATTERMOST_VERSION, NUXEO_IMAGE.
         type: string
         default: ''
       timeout_minutes:
@@ -36,6 +36,20 @@ on:
           LIFERAY_IMAGE at a liferay/dxp image — the free liferay/portal image runs unlicensed.
           Kept a secret rather than an input so it never lands in the logs; handed to the stand
           as LIFERAY_LICENSE (tests/setup/liferay.ts writes it to the artifacts directory).
+        required: false
+      nuxeo_clid:
+        description: >-
+          Nuxeo Connect CLID, its two lines joined with "--" (see .env.example). Only needed for
+          system=nuxeo: the nuxeo-web-ui package the ONLYOFFICE package depends on is downloaded
+          from Connect on the stand's first start. Handed to the stand as NUXEO_CLID.
+        required: false
+      nuxeo_registry_user:
+        description: >-
+          Token name for docker-private.packages.nuxeo.com, where Nuxeo publishes its LTS images
+          (there is no public image). Only needed for system=nuxeo — see the docker login step.
+        required: false
+      nuxeo_registry_token:
+        description: 'Token pass code matching nuxeo_registry_user.'
         required: false
 
 jobs:
@@ -101,10 +115,18 @@ jobs:
           sudo systemctl stop postgresql apache2 nginx 2>/dev/null || true
           df -h /
 
+      - name: Log in to Nuxeo's private Docker registry
+        if: inputs.system == 'nuxeo'
+        env:
+          NUXEO_REGISTRY_USER: ${{ secrets.nuxeo_registry_user }}
+          NUXEO_REGISTRY_TOKEN: ${{ secrets.nuxeo_registry_token }}
+        run: printf '%s' "$NUXEO_REGISTRY_TOKEN" | docker login docker-private.packages.nuxeo.com -u "$NUXEO_REGISTRY_USER" --password-stdin
+
       - name: Run E2E tests
         timeout-minutes: 45
         env:
           LIFERAY_LICENSE: ${{ secrets.liferay_license }}
+          NUXEO_CLID: ${{ secrets.nuxeo_clid }}
         run: npx playwright test --project=${{ inputs.system }} --reporter=github,list,html
 
       - name: Collect container logs
