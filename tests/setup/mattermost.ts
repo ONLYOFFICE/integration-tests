@@ -131,6 +131,7 @@ async function configureDocumentServer(session: AdminSession, ds: DocumentServer
     DESJwt: ds.secret,
     DESJwtHeader: ds.header,
     DESJwtPrefix: 'Bearer ',
+    DESAllowPrivate: true,
     DemoEnabled: false,
     Formats: '',
     OwnerProtected: false,
