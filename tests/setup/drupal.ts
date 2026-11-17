@@ -47,14 +47,15 @@ function drush(...args: string[]): string {
 }
 
 /**
- * Logs to attach to a setup failure. Also saved into test-results/ (uploaded as an artifact by
- * .github/workflows/e2e.yml), because global.teardown removes the stack right after setup fails.
+ * The container log and the watchdog, also saved into test-results/ (uploaded as an artifact by
+ * .github/workflows/e2e.yml): the watchdog lives in the stack's database, which global.teardown
+ * removes, and it holds what went wrong in Document Server's callbacks.
  */
-function describeState(): string {
+function describeState(watchdogCount: number): string {
   const logs = stack.sh(`docker logs --tail 200 ${DRUPAL_CONTAINER} 2>&1`, { ignoreErrors: true });
   let watchdog = '';
   try {
-    watchdog = drush('watchdog:show', '--count=50', '--extended');
+    watchdog = drush('watchdog:show', `--count=${watchdogCount}`, '--extended');
   } catch (error) {
     watchdog = error instanceof Error ? error.message : String(error);
   }
@@ -150,7 +151,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
     configureDocumentServer(ds);
     verifyConnection();
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${describeState()}`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${describeState(50)}`);
   }
 
   process.env.DRUPAL_URL = DRUPAL_URL;
@@ -162,6 +163,7 @@ export function teardown(): void {
   if (reusingExisting) {
     return;
   }
+  describeState(500);
   console.log('[drupal] Removing stack...');
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} down --volumes --remove-orphans`, {
     ignoreErrors: true,
