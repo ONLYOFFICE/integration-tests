@@ -32,6 +32,17 @@ export default defineConfig({
       testIgnore: ['shared/force-save.spec.ts'],
     },
     {
+      name: 'drupal',
+      testMatch: ['shared/**/*.spec.ts', 'drupal/**/*.spec.ts'],
+      testIgnore: [
+        // The callback controller doesn't handle force-save (status 6)
+        'shared/force-save.spec.ts',
+        // The module has no "create new document" or conversion flow
+        'shared/create-via-plugin.spec.ts',
+        'shared/convert.spec.ts',
+      ],
+    },
+    {
       name: 'jira',
       testMatch: ['shared/**/*.spec.ts', 'jira/**/*.spec.ts'],
       testIgnore: ['shared/force-save.spec.ts'],

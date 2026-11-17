@@ -1,6 +1,7 @@
 import { registerAdapter, test, expect } from '@core';
 import { AlfrescoAdapter } from '@adapters/alfresco';
 import { ConfluenceAdapter } from '@adapters/confluence';
+import { DrupalAdapter } from '@adapters/drupal';
 import { JiraAdapter } from '@adapters/jira';
 import { LiferayAdapter } from '@adapters/liferay';
 import { MattermostAdapter } from '@adapters/mattermost';
@@ -20,6 +21,15 @@ registerAdapter('alfresco', () => {
 registerAdapter('confluence', () => {
   return new ConfluenceAdapter({
     baseUrl: process.env.CONFLUENCE_URL ?? 'http://127.0.0.1:8090',
+    admin: { username: 'admin', password: 'admin' },
+    secondUser: { username: 'autotest2', password: 'automation123' },
+    readOnlyUser: { username: 'autotest3', password: 'automation123' },
+  });
+});
+
+registerAdapter('drupal', () => {
+  return new DrupalAdapter({
+    baseUrl: process.env.DRUPAL_URL ?? 'http://127.0.0.1:8070',
     admin: { username: 'admin', password: 'admin' },
     secondUser: { username: 'autotest2', password: 'automation123' },
     readOnlyUser: { username: 'autotest3', password: 'automation123' },

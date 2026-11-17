@@ -9,6 +9,7 @@ environments/
     commons/base.yaml    # traefik proxy and routes (from acs-deployment)
     artifacts/           # onlyoffice-alfresco plugin builds (see README there)
   confluence/            # (other systems follow the same pattern)
+  drupal/                # Drupal + MariaDB (Dockerfile bakes the module build in)
   mattermost/            # Mattermost + Postgres stack
   nuxeo/                 # Nuxeo (single container; Dockerfile bakes the package build in)
 ```
