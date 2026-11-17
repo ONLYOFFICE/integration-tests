@@ -13,6 +13,7 @@ packages/
   core/                # shared foundation: types, fixtures, EditorPage, verify/extractText
   adapter-alfresco/    # HostAdapter implementation for Alfresco (Share + REST API v1)
   adapter-confluence/  # HostAdapter implementation for Confluence
+  adapter-drupal/      # HostAdapter implementation for Drupal (Media + JSON:API)
   adapter-jira/        # HostAdapter implementation for Jira
   adapter-liferay/     # HostAdapter implementation for Liferay
 tests/

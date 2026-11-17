@@ -18,6 +18,7 @@ cp .env.example .env              # adjust versions/images
 
 npm run test:alfresco              # run against Alfresco only
 npm run test:confluence            # run against Confluence only
+npm run test:drupal                # run against Drupal only
 npm run test:jira                  # run against Jira only
 npm run test:liferay               # run against Liferay only
 npm run test:mattermost            # run against Mattermost only

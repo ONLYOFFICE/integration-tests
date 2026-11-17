@@ -62,6 +62,15 @@ export default defineConfig({
   projects: [
     ...system('alfresco', { ignore: UNVERIFIED_SHARED }),
     ...system('confluence', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
+    ...system('drupal', {
+      ignore: [
+        // The callback controller doesn't handle force-save (status 6)
+        'shared/force-save.spec.ts',
+        // The module has no "create new document" or conversion flow
+        'shared/create-via-plugin.spec.ts',
+        'shared/convert.spec.ts',
+      ],
+    }),
     ...system('jira', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
     ...system('liferay', { ignore: UNVERIFIED_SHARED }),
     ...system('mattermost', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),

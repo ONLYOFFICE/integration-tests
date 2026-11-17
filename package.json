@@ -6,6 +6,7 @@
   "scripts": {
     "test:alfresco": "playwright test --project=alfresco",
     "test:confluence": "playwright test --project=confluence",
+    "test:drupal": "playwright test --project=drupal",
     "test:jira": "playwright test --project=jira",
     "test:liferay": "playwright test --project=liferay",
     "test:mattermost": "playwright test --project=mattermost",
