@@ -1,0 +1,30 @@
+services:
+    db:
+        image: mariadb:11.4
+        # Drupal recommends READ-COMMITTED for MySQL/MariaDB; the status report warns otherwise.
+        command: --transaction-isolation=READ-COMMITTED
+        environment:
+            MARIADB_DATABASE: drupal
+            MARIADB_USER: drupal
+            MARIADB_PASSWORD: drupal
+            MARIADB_ROOT_PASSWORD: drupal
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            interval: 2s
+            retries: 60
+
+    drupal:
+        # Built fresh every run from ./Dockerfile on top of ${DRUPAL_IMAGE} (see there) — a fixed
+        # tag, like onlyoffice-it-nuxeo:local, so successive runs overwrite rather than pile up images.
+        image: onlyoffice-it-drupal:local
+        build:
+            context: .
+            args:
+                DRUPAL_IMAGE: ${DRUPAL_IMAGE:-drupal:11-php8.4-apache}
+        depends_on:
+            db:
+                condition: service_healthy
+        ports:
+            # Not 8080 (Jira/Liferay/Nuxeo, and Docs in the module's own dev stand) or 8000 (Drupal
+            # in that dev stand), so the tests can run next to it.
+            - "8070:80"
