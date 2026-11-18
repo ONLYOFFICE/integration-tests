@@ -26,6 +26,7 @@ export default async function globalSetup(): Promise<void> {
 
   const ds = await startDocumentServer();
   await standFor(system).setup(ds);
+  await ds.startupFinished;
 
   console.log('[global.setup] Stack ready');
 }

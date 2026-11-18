@@ -10,6 +10,11 @@ export interface DocumentServer {
   header: string;
   /** Host IP shared by the browser and the host systems' docker containers */
   host: string;
+  /**
+   * Settles once the image's startup script is done (see waitForStartupFinished). Not awaited by
+   * startDocumentServer itself, so the host system's stack starts meanwhile.
+   */
+  startupFinished: Promise<void>;
 }
 
 const IPV4 = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/;
@@ -141,6 +146,29 @@ async function waitForDocumentServer(timeoutMs: number): Promise<void> {
 }
 
 /**
+ * The healthcheck answers long before the image's startup script is done: in the background it
+ * regenerates the font list and then restarts ds:docservice and ds:converter (in the official
+ * image, ~1.5 min after the start), which drops every open editor with "Connection is lost" and
+ * the changes typed in it. Its last step, tailing the logs (`... | xargs tail -F`), starts only
+ * after that restart, so that process marks the end. An image without that step only gets a
+ * warning: waiting is best effort, never a reason to fail the run.
+ */
+async function waitForStartupFinished(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (sh(`docker exec ${DS_CONTAINER} pgrep -f "xargs tail -F"`, { ignoreErrors: true })) {
+      console.log('[document-server] Startup finished');
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+  console.warn(
+    `[document-server] Startup script of ${DS_CONTAINER} did not reach its last step within ${Math.round(timeoutMs / 1000)}s — ` +
+      'editors may lose the connection if Document Server restarts its services during the tests',
+  );
+}
+
+/**
  * Spins up a disposable Document Server container (image — DOCUMENTSERVER_IMAGE) with
  * a generated JWT secret, and detects the host IP shared by the browser and the host
  * systems' containers. A shared step for all systems — independent of which one is tested.
@@ -152,7 +180,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
     const secret = process.env.DOCUMENTSERVER_SECRET ?? '';
     const host = new URL(url).hostname;
     console.log(`[document-server] Using existing Document Server at ${url} (DOCUMENTSERVER_URL is set) — skipping startup`);
-    return { url, secret, host, header };
+    return { url, secret, host, header, startupFinished: Promise.resolve() };
   }
 
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
@@ -171,7 +199,7 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   const url = `http://${host}/`;
   console.log(`[document-server] Host IP: ${host} (Document Server: ${url})`);
 
-  return { url, secret, host, header };
+  return { url, secret, host, header, startupFinished: waitForStartupFinished(300_000) };
 }
 
 /** Stops and removes the Document Server container along with its anonymous volumes */
