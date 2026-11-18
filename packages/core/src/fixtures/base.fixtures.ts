@@ -1,6 +1,7 @@
 import { BrowserContext, test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CAPTURE_EDITOR_CONFIG } from '../editor/editor-config';
 import { EditorPage } from '../editor/editor.page';
 import { FileRef, FileType, HostAdapter, LegacyFileType, TestUser } from '../types';
 
@@ -131,6 +132,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   openEditor: async ({ page, adapter }, use) => {
     await use(async (file: FileRef) => {
+      await page.addInitScript(CAPTURE_EDITOR_CONFIG);
       await adapter.openInEditor(page, file);
       return EditorPage.attach(page, adapter.editorFrameSelector);
     });
@@ -144,6 +146,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       // session here would silently start out already authenticated as the primary user
       const context = await browser.newContext({ baseURL: adapter.baseUrl, storageState: undefined });
       contexts.push(context);
+      await context.addInitScript(CAPTURE_EDITOR_CONFIG);
       const page = await context.newPage();
       await adapter.login(page, user);
       await adapter.openInEditor(page, file);
