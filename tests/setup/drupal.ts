@@ -149,6 +149,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
     createUser(SECOND_USER, SECOND_PASSWORD, EDITOR_ROLE);
     createUser(READONLY_USER, READONLY_PASSWORD, VIEWER_ROLE);
     configureDocumentServer(ds);
+    // The check converts a file in Document Server, which fails while it restarts its services
+    await ds.startupFinished;
     verifyConnection();
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\n${describeState(50)}`);
