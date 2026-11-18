@@ -16,7 +16,7 @@ export class DrupalAdapter implements HostAdapter {
   readonly secondUser: TestUser;
   readonly readOnlyUser: TestUser;
 
-  private readonly api: DrupalApi;
+  readonly api: DrupalApi;
 
   constructor(options: DrupalOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');

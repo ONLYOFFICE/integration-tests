@@ -15,14 +15,20 @@ export interface DrupalMedia {
   name: string;
   /** ISO-8601 */
   changed: string;
+  published: boolean;
+  /** UUID of the media's current file entity */
+  fileId?: string;
   /** Root-relative URL of the media's current file (a public file, served by Apache directly) */
   fileUrl?: string;
+  /** Account name of the user the current revision was made by */
+  revisionUser?: string;
 }
 
 interface JsonApiResource {
   id: string;
   type: string;
   attributes: Record<string, any>;
+  relationships?: Record<string, { data: { id: string; type: string } | null }>;
 }
 
 /** Drupal's JSON:API (/jsonapi), Basic auth as the given user — tests/setup/drupal.ts enables both */
@@ -56,7 +62,7 @@ export class DrupalApi {
    * media type's source field makes the (temporary) file entity, and the media referencing it
    * makes it permanent.
    */
-  async createMedia(fileName: string, content: Buffer): Promise<DrupalMedia> {
+  async createMedia(fileName: string, content: Buffer, published = true): Promise<DrupalMedia> {
     const upload = await this.request(`/media/${MEDIA_TYPE}/${SOURCE_FIELD}`, {
       method: 'POST',
       headers: {
@@ -73,7 +79,7 @@ export class DrupalApi {
       body: JSON.stringify({
         data: {
           type: `media--${MEDIA_TYPE}`,
-          attributes: { name: fileName, status: true },
+          attributes: { name: fileName, status: published },
           relationships: { [SOURCE_FIELD]: { data: { type: 'file--file', id: file.id } } },
         },
       }),
@@ -86,9 +92,41 @@ export class DrupalApi {
    * media revision, so the file is always looked up through the media rather than remembered.
    */
   async getMedia(uuid: string): Promise<DrupalMedia> {
-    const response = await this.request(`/media/${MEDIA_TYPE}/${uuid}?include=${SOURCE_FIELD}`);
+    const response = await this.request(`/media/${MEDIA_TYPE}/${uuid}?include=${SOURCE_FIELD},revision_user`);
     const body = (await response.json()) as { data: JsonApiResource; included?: JsonApiResource[] };
-    return this.toMedia(body.data, body.included?.find((resource) => resource.type === 'file--file'));
+    const included = (relationship: string) => {
+      const target = body.data.relationships?.[relationship]?.data;
+      return body.included?.find((resource) => resource.id === target?.id);
+    };
+    return this.toMedia(body.data, included(SOURCE_FIELD), included('revision_user'));
+  }
+
+  async setPublished(uuid: string, published: boolean): Promise<void> {
+    await this.request(`/media/${MEDIA_TYPE}/${uuid}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': JSON_API },
+      body: JSON.stringify({ data: { type: `media--${MEDIA_TYPE}`, id: uuid, attributes: { status: published } } }),
+    });
+  }
+
+  /** Whether the file entity still exists — saving in the editor must keep the previous file */
+  async fileExists(fileId: string): Promise<boolean> {
+    try {
+      await this.request(`/file/file/${fileId}`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The numeric user id — the one Document Server's callbacks carry in `users` */
+  async userId(username: string): Promise<string> {
+    const response = await this.request(`/user/user?filter[name]=${encodeURIComponent(username)}`);
+    const [user] = ((await response.json()) as { data: JsonApiResource[] }).data;
+    if (!user) {
+      throw new Error(`Drupal user ${username} not found`);
+    }
+    return String(user.attributes.drupal_internal__uid);
   }
 
   async downloadFile(uuid: string): Promise<Buffer> {
@@ -107,13 +145,16 @@ export class DrupalApi {
     await this.request(`/media/${MEDIA_TYPE}/${uuid}`, { method: 'DELETE' });
   }
 
-  private toMedia(media: JsonApiResource, file?: JsonApiResource): DrupalMedia {
+  private toMedia(media: JsonApiResource, file?: JsonApiResource, revisionUser?: JsonApiResource): DrupalMedia {
     return {
       uuid: media.id,
       mid: media.attributes.drupal_internal__mid,
       name: media.attributes.name,
       changed: media.attributes.changed,
+      published: media.attributes.status,
+      fileId: file?.id,
       fileUrl: file?.attributes.uri?.url,
+      revisionUser: revisionUser?.attributes.name,
     };
   }
 }
