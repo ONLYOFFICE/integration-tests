@@ -101,6 +101,18 @@ export class DrupalApi {
     return this.toMedia(body.data, included(SOURCE_FIELD), included('revision_user'));
   }
 
+  /** Media with this exact name, unpublished ones included (the API client is an administrator) */
+  async findMedia(name: string): Promise<DrupalMedia[]> {
+    const response = await this.request(
+      `/media/${MEDIA_TYPE}?filter[name]=${encodeURIComponent(name)}&include=${SOURCE_FIELD}`,
+    );
+    const body = (await response.json()) as { data: JsonApiResource[]; included?: JsonApiResource[] };
+    return body.data.map((media) => {
+      const fileId = media.relationships?.[SOURCE_FIELD]?.data?.id;
+      return this.toMedia(media, body.included?.find((resource) => resource.id === fileId));
+    });
+  }
+
   async setPublished(uuid: string, published: boolean): Promise<void> {
     await this.request(`/media/${MEDIA_TYPE}/${uuid}`, {
       method: 'PATCH',

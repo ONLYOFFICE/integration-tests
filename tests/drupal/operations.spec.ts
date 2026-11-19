@@ -33,3 +33,17 @@ test('a user who can only view media is offered viewing', async ({ createMedia, 
   await page.goto('/admin/content/media');
   await expect(operation(page, docx)).toHaveText('View in ONLYOFFICE');
 });
+
+test('a user who may edit only own documents is offered editing for those only', async ({
+  createMedia,
+  drupal,
+  pageAs,
+}) => {
+  const own = await createMedia(uniqueName('docx'), loadTemplate('docx'), { owner: drupal.ownerUser });
+  const others = await createMedia(uniqueName('docx'), loadTemplate('docx'));
+
+  const page = await pageAs(drupal.ownerUser);
+  await page.goto('/admin/content/media');
+  await expect(operation(page, own)).toHaveText('Edit in ONLYOFFICE');
+  await expect(operation(page, others)).toHaveText('View in ONLYOFFICE');
+});

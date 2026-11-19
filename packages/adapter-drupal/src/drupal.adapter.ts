@@ -1,12 +1,56 @@
 import { Page } from '@playwright/test';
-import { FileRef, FileType, HostAdapter, LegacyFileType, loadTemplate, TestUser } from '@core';
+import {
+  ConnectionCheck,
+  ConnectionSettings,
+  DocsConnection,
+  FileRef,
+  FileType,
+  HostAdapter,
+  LegacyFileType,
+  loadTemplate,
+  TestUser,
+} from '@core';
 import { DrupalApi } from './drupal.api';
+
+export const SETTINGS_PATH = '/admin/config/system/onlyoffice-settings';
 
 export interface DrupalOptions {
   baseUrl: string;
   admin: TestUser;
   secondUser: TestUser;
   readOnlyUser: TestUser;
+  /** Can create documents and edit only its own (tests/setup/drupal.ts) */
+  ownerUser: TestUser;
+}
+
+/**
+ * The module's settings form. The JWT header sits in the collapsed "Advanced server settings",
+ * which is opened before filling it in.
+ */
+class DrupalConnectionSettings implements ConnectionSettings {
+  async read(page: Page): Promise<DocsConnection> {
+    await page.goto(SETTINGS_PATH);
+    return {
+      url: await page.locator('input[name="doc_server_url"]').inputValue(),
+      secret: await page.locator('input[name="doc_server_jwt"]').inputValue(),
+      header: (await page.locator('input[name="doc_server_jwt_header"]').inputValue()) || 'Authorization',
+    };
+  }
+
+  async write(page: Page, connection: DocsConnection): Promise<ConnectionCheck> {
+    await page.goto(SETTINGS_PATH);
+    await page.locator('details:has(input[name="doc_server_jwt_header"])').evaluate((details) => {
+      (details as HTMLDetailsElement).open = true;
+    });
+    await page.locator('input[name="doc_server_url"]').fill(connection.url);
+    await page.locator('input[name="doc_server_jwt"]').fill(connection.secret);
+    await page.locator('input[name="doc_server_jwt_header"]').fill(connection.header);
+    await Promise.all([page.waitForLoadState('load'), page.locator('#edit-submit').click()]);
+
+    // The form always saves valid settings and reports the check in a status or warning message
+    const message = (await page.locator('[data-drupal-messages]').innerText().catch(() => '')).trim();
+    return { ok: message.includes('connection check succeeded'), message };
+  }
 }
 
 export class DrupalAdapter implements HostAdapter {
@@ -15,6 +59,8 @@ export class DrupalAdapter implements HostAdapter {
   readonly defaultUser: TestUser;
   readonly secondUser: TestUser;
   readonly readOnlyUser: TestUser;
+  readonly ownerUser: TestUser;
+  readonly connectionSettings = new DrupalConnectionSettings();
 
   readonly api: DrupalApi;
 
@@ -23,7 +69,13 @@ export class DrupalAdapter implements HostAdapter {
     this.defaultUser = options.admin;
     this.secondUser = options.secondUser;
     this.readOnlyUser = options.readOnlyUser;
+    this.ownerUser = options.ownerUser;
     this.api = new DrupalApi(this.baseUrl, options.admin);
+  }
+
+  /** The JSON:API client acting as another user — e.g. to create media that user owns */
+  apiAs(user: TestUser): DrupalApi {
+    return new DrupalApi(this.baseUrl, user);
   }
 
   /**
