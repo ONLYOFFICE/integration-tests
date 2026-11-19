@@ -1,6 +1,22 @@
 import { expect, FrameLocator, Page } from '@playwright/test';
 import type { EditorConfig } from './editor-config';
 
+/**
+ * The config the page handed to Docs' api.js, without waiting for the editor to load — for pages
+ * where it can't (e.g. while the host is set up with a JWT Document Server doesn't accept). The
+ * page must carry CAPTURE_EDITOR_CONFIG, added before it loaded.
+ */
+export async function waitForEditorConfig(page: Page, timeoutMs = 30_000): Promise<EditorConfig> {
+  const handle = await page
+    .waitForFunction(() => (window as unknown as { __oitEditorConfig?: EditorConfig }).__oitEditorConfig, undefined, {
+      timeout: timeoutMs,
+    })
+    .catch(() => {
+      throw new Error('No editor config was recorded — was CAPTURE_EDITOR_CONFIG added to the page before it loaded?');
+    });
+  return (await handle.jsonValue()) as EditorConfig;
+}
+
 /** iframe that Document Server's api.js creates inside the host system page */
 const DEFAULT_FRAME_SELECTOR = 'iframe[name="frameEditor"]';
 
@@ -31,11 +47,7 @@ export class EditorPage {
    * which the openEditor/openEditorAs fixtures install before the page loads.
    */
   async config(): Promise<EditorConfig> {
-    const config = await this.page.evaluate(() => (window as unknown as { __oitEditorConfig?: EditorConfig }).__oitEditorConfig);
-    if (!config) {
-      throw new Error('No editor config was recorded — was the page opened through the openEditor/openEditorAs fixtures?');
-    }
-    return config;
+    return waitForEditorConfig(this.page, 1_000);
   }
 
   async typeText(text: string): Promise<void> {
