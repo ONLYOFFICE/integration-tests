@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
+import { drupalDrush } from './drupal-drush';
 
 const stack = stackFor('drupal');
 const DRUPAL_CONTAINER = `${stack.COMPOSE_PROJECT}-drupal-1`;
@@ -15,35 +15,24 @@ const SECOND_USER = 'autotest2';
 const SECOND_PASSWORD = 'automation123';
 const READONLY_USER = 'autotest3';
 const READONLY_PASSWORD = 'automation123';
+const OWNER_USER = 'autotest4';
+const OWNER_PASSWORD = 'automation123';
 
 // The module's editor route needs both "view media" and "access media overview"; saving needs
 // edit access to the media, which the module re-checks for the user in Document Server's callback.
 const EDITOR_ROLE = { id: 'autotest_media_editor', permissions: 'view media,access media overview,edit any document media' };
 const VIEWER_ROLE = { id: 'autotest_media_viewer', permissions: 'view media,access media overview' };
+// Edits only its own documents, and can create them — so it is also offered "Save copy as"
+const OWNER_ROLE = {
+  id: 'autotest_media_owner',
+  permissions: 'view media,access media overview,create document media,edit own document media',
+};
 
 // See tests/setup/nuxeo.ts: setup() overwrites DRUPAL_URL, so teardown() can't re-check it.
 let reusingExisting = false;
 
-/**
- * Runs a command in the Drupal container. execFileSync rather than stack.sh(): arguments go to
- * docker as they are, without a shell (cmd.exe on Windows) mangling the quotes in PHP code.
- */
-function exec(args: string[], options: { user?: string; input?: string } = {}): string {
-  try {
-    return execFileSync(
-      'docker',
-      ['exec', '-i', '-u', options.user ?? 'www-data', '-e', 'HOME=/tmp', '-w', '/opt/drupal', DRUPAL_CONTAINER, ...args],
-      { encoding: 'utf8', input: options.input ?? '', stdio: ['pipe', 'pipe', 'pipe'] },
-    ).trim();
-  } catch (error) {
-    const { stdout, stderr } = error as { stdout?: string; stderr?: string };
-    throw new Error(`[drupal] ${args.join(' ')} failed:\n${[stdout, stderr].filter(Boolean).join('\n')}`);
-  }
-}
-
-/** --uri makes the absolute URLs drush builds (e.g. for the connection check) use the stand's address */
 function drush(...args: string[]): string {
-  return exec(['vendor/bin/drush', `--uri=${DRUPAL_URL}`, ...args]);
+  return drupalDrush(DRUPAL_CONTAINER, DRUPAL_URL, ...args);
 }
 
 /**
@@ -101,6 +90,50 @@ function createUser(username: string, password: string, role: { id: string; perm
 }
 
 /**
+ * The module's preview formatter on the Document media page (/media/{id}, which Drupal only
+ * serves with standalone_url on), open to anonymous visitors — what tests/drupal/preview.spec.ts
+ * looks at.
+ */
+function enablePreview(): void {
+  console.log('[drupal] Showing Document media with the ONLYOFFICE preview...');
+  drush('config:set', '-y', 'media.settings', 'standalone_url', '1');
+  drush('role:perm:add', 'anonymous', 'view media');
+  drush(
+    'php:eval',
+    `\\Drupal::service('entity_display.repository')->getViewDisplay('media', 'document', 'default')
+      ->setComponent('field_media_document', [
+        'type' => 'onlyoffice_preview',
+        'label' => 'hidden',
+        'settings' => ['width_unit' => '%', 'width' => 100, 'height_unit' => 'px', 'height' => 640],
+      ])
+      ->save();`,
+  );
+}
+
+/**
+ * Russian under the /ru prefix, with the module's own translation imported from its .po file —
+ * not from localize.drupal.org, so the stand needs no network for it.
+ */
+function enableRussian(): void {
+  console.log('[drupal] Adding Russian with the module translation...');
+  drush('pm:install', '-y', 'language', 'locale');
+  drush('language:add', 'ru', '--skip-translations');
+  // Absolute: drush runs from the web root, not from /opt/drupal
+  drush('locale:import', 'ru', '/opt/drupal/web/modules/contrib/onlyoffice/translations/onlyoffice.ru.po');
+}
+
+/**
+ * What the module signs its link keys with (OnlyofficeUrlHelper::getLinkSecret()), so that the
+ * route scenarios can build keys the module would never hand out: expired, for a missing file…
+ */
+function publishLinkSecret(): void {
+  process.env.DRUPAL_LINK_SECRET = drush(
+    'php:eval',
+    "echo \\Drupal\\Core\\Site\\Settings::getHashSalt() . \\Drupal::service('private_key')->get();",
+  );
+}
+
+/**
  * Points the module at the Document Server — the same settings its form saves. Neither the
  * internal Docs address nor the storage address is needed: Drupal, the browser and Document
  * Server all reach each other through the shared host IP.
@@ -148,6 +181,10 @@ export async function setup(ds: DocumentServer): Promise<void> {
     enableModules();
     createUser(SECOND_USER, SECOND_PASSWORD, EDITOR_ROLE);
     createUser(READONLY_USER, READONLY_PASSWORD, VIEWER_ROLE);
+    createUser(OWNER_USER, OWNER_PASSWORD, OWNER_ROLE);
+    enablePreview();
+    enableRussian();
+    publishLinkSecret();
     configureDocumentServer(ds);
     // The check converts a file in Document Server, which fails while it restarts its services
     await ds.startupFinished;
@@ -157,6 +194,7 @@ export async function setup(ds: DocumentServer): Promise<void> {
   }
 
   process.env.DRUPAL_URL = DRUPAL_URL;
+  process.env.DRUPAL_CONTAINER = DRUPAL_CONTAINER;
   console.log('[drupal] Stack ready');
 }
 
