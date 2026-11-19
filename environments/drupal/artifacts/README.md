@@ -12,8 +12,10 @@ those do; a plain `git clone` without `--recurse-submodules` doesn't.
 `../Dockerfile` (via `../install-module.php`) copies the module into
 `web/modules/contrib/onlyoffice` of a thin layer over `DRUPAL_IMAGE` and installs
 its composer requirements plus drush. `tests/setup/drupal.ts` then installs the
-site, enables Media, JSON:API, Basic Auth and the module, points it at the
-Document Server and runs the module's own connection check.
+site, sets up the private file system, enables Media, JSON:API, Basic Auth, the
+module and its `onlyoffice_form` submodule, adds a content type with an
+ONLYOFFICE form field, points the module at the Document Server and runs the
+module's own connection check.
 
 The test accounts and their roles are created by `tests/setup/drupal.ts` on every
 stack startup — no files need to be placed here for that.

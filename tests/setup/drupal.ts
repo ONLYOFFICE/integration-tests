@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
-import { drupalDrush } from './drupal-drush';
+import { drupalDrush, drupalExec } from './drupal-drush';
 
 const stack = stackFor('drupal');
 const DRUPAL_CONTAINER = `${stack.COMPOSE_PROJECT}-drupal-1`;
@@ -27,6 +27,10 @@ const OWNER_ROLE = {
   id: 'autotest_media_owner',
   permissions: 'view media,access media overview,create document media,edit own document media',
 };
+
+const PRIVATE_FILES = '/opt/drupal/private';
+const FORM_NODE_TYPE = 'oit_form_page';
+const FORM_FIELD = 'field_oit_form';
 
 // See tests/setup/nuxeo.ts: setup() overwrites DRUPAL_URL, so teardown() can't re-check it.
 let reusingExisting = false;
@@ -74,11 +78,49 @@ function installSite(): void {
   );
 }
 
+/**
+ * The private file system, which a site sets up in settings.php: the forms scenarios store forms
+ * and submissions in it, as a site that keeps submissions private does.
+ */
+function enablePrivateFiles(): void {
+  console.log('[drupal] Setting up the private file system...');
+  drupalExec(DRUPAL_CONTAINER, ['mkdir', '-p', PRIVATE_FILES], { user: 'root' });
+  drupalExec(DRUPAL_CONTAINER, ['chown', 'www-data:www-data', PRIVATE_FILES], { user: 'root' });
+  drupalExec(DRUPAL_CONTAINER, ['sh', '-c', 'cat >> web/sites/default/settings.php'], {
+    user: 'root',
+    input: `\n$settings['file_private_path'] = '${PRIVATE_FILES}';\n`,
+  });
+}
+
 /** JSON:API and Basic Auth are what the adapter creates, reads and deletes test media through */
 function enableModules(): void {
-  console.log('[drupal] Enabling Media, JSON:API, Basic Auth and the ONLYOFFICE module...');
-  drush('pm:install', '-y', 'media', 'jsonapi', 'basic_auth', 'onlyoffice');
+  console.log('[drupal] Enabling Media, JSON:API, Basic Auth and the ONLYOFFICE modules...');
+  drush('pm:install', '-y', 'media', 'jsonapi', 'basic_auth', 'onlyoffice', 'onlyoffice_form');
   drush('config:set', '-y', 'jsonapi.settings', 'read_only', '0');
+}
+
+/**
+ * A content type with an ONLYOFFICE form field, shown with the module's form formatter — where
+ * visitors fill in and submit forms in the forms scenarios. Its own type: the standard profile of
+ * Drupal 11.4 no longer creates Article.
+ */
+function addFormContentType(): void {
+  console.log('[drupal] Adding a content type with an ONLYOFFICE form field...');
+  drush(
+    'php:eval',
+    `\\Drupal\\node\\Entity\\NodeType::create(['type' => '${FORM_NODE_TYPE}', 'name' => 'Form page'])->save();
+      \\Drupal\\field\\Entity\\FieldStorageConfig::create([
+        'field_name' => '${FORM_FIELD}', 'entity_type' => 'node', 'type' => 'onlyoffice_form', 'cardinality' => 1,
+      ])->save();
+      \\Drupal\\field\\Entity\\FieldConfig::create([
+        'field_name' => '${FORM_FIELD}', 'entity_type' => 'node', 'bundle' => '${FORM_NODE_TYPE}', 'label' => 'Form',
+      ])->save();
+      $repository = \\Drupal::service('entity_display.repository');
+      $repository->getFormDisplay('node', '${FORM_NODE_TYPE}', 'default')
+        ->setComponent('${FORM_FIELD}', ['type' => 'onlyoffice_form_widget'])->save();
+      $repository->getViewDisplay('node', '${FORM_NODE_TYPE}', 'default')
+        ->setComponent('${FORM_FIELD}', ['type' => 'onlyoffice_form_formatter', 'label' => 'hidden'])->save();`,
+  );
 }
 
 function createUser(username: string, password: string, role: { id: string; permissions: string }): void {
@@ -120,6 +162,11 @@ function enableRussian(): void {
   drush('language:add', 'ru', '--skip-translations');
   // Absolute: drush runs from the web root, not from /opt/drupal
   drush('locale:import', 'ru', '/opt/drupal/web/modules/contrib/onlyoffice/translations/onlyoffice.ru.po');
+  drush(
+    'locale:import',
+    'ru',
+    '/opt/drupal/web/modules/contrib/onlyoffice/modules/onlyoffice-form/translations/onlyoffice_form.ru.po',
+  );
 }
 
 /**
@@ -178,7 +225,9 @@ export async function setup(ds: DocumentServer): Promise<void> {
 
   try {
     installSite();
+    enablePrivateFiles();
     enableModules();
+    addFormContentType();
     createUser(SECOND_USER, SECOND_PASSWORD, EDITOR_ROLE);
     createUser(READONLY_USER, READONLY_PASSWORD, VIEWER_ROLE);
     createUser(OWNER_USER, OWNER_PASSWORD, OWNER_ROLE);
