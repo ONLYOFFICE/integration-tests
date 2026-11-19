@@ -118,9 +118,6 @@ test('a format the module only views opens in view mode even for an editor', asy
 });
 
 test('an unsupported format shows a message instead of the editor', async ({ createMedia, page }) => {
-  // Known bug: the page passes an empty config to DocsAPI.DocEditor and shows the message in its
-  // onAppReady, which never fires without a document — the user gets a blank page.
-  test.fail();
   const media = await createMedia(uniqueName('odf'), Buffer.from('not a formula'));
   const scriptErrors: string[] = [];
   page.on('pageerror', (error) => scriptErrors.push(error.message));
