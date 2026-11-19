@@ -1,12 +1,26 @@
 import { TestUser } from '@core';
 
+export interface DrupalMediaType {
+  bundle: string;
+  sourceField: string;
+}
+
 /**
  * The standard install profile's "Document" media type and its file field — the media type the
  * module's editor opens. JSON:API names its resource media--document.
  */
-const MEDIA_TYPE = 'document';
-const SOURCE_FIELD = 'field_media_document';
+export const DOCUMENT: DrupalMediaType = { bundle: 'document', sourceField: 'field_media_document' };
+/** The media type the onlyoffice_form submodule installs */
+export const PDF_FORM: DrupalMediaType = { bundle: 'onlyoffice_pdf_form', sourceField: 'field_media_pdf_file' };
+/** The content type with an ONLYOFFICE form field that tests/setup/drupal.ts adds */
+export const FORM_NODE_TYPE = 'oit_form_page';
+export const FORM_FIELD = 'field_oit_form';
 const JSON_API = 'application/vnd.api+json';
+
+export interface DrupalNode {
+  uuid: string;
+  nid: number;
+}
 
 export interface DrupalMedia {
   uuid: string;
@@ -18,7 +32,7 @@ export interface DrupalMedia {
   published: boolean;
   /** UUID of the media's current file entity */
   fileId?: string;
-  /** Root-relative URL of the media's current file (a public file, served by Apache directly) */
+  /** Root-relative URL of the media's current file (a public file is served by Apache directly) */
   fileUrl?: string;
   /** Account name of the user the current revision was made by */
   revisionUser?: string;
@@ -62,8 +76,8 @@ export class DrupalApi {
    * media type's source field makes the (temporary) file entity, and the media referencing it
    * makes it permanent.
    */
-  async createMedia(fileName: string, content: Buffer, published = true): Promise<DrupalMedia> {
-    const upload = await this.request(`/media/${MEDIA_TYPE}/${SOURCE_FIELD}`, {
+  async createMedia(fileName: string, content: Buffer, published = true, type = DOCUMENT): Promise<DrupalMedia> {
+    const upload = await this.request(`/media/${type.bundle}/${type.sourceField}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
@@ -73,51 +87,71 @@ export class DrupalApi {
     });
     const file = ((await upload.json()) as { data: JsonApiResource }).data;
 
-    const response = await this.request(`/media/${MEDIA_TYPE}`, {
+    const response = await this.request(`/media/${type.bundle}`, {
       method: 'POST',
       headers: { 'Content-Type': JSON_API },
       body: JSON.stringify({
         data: {
-          type: `media--${MEDIA_TYPE}`,
+          type: `media--${type.bundle}`,
           attributes: { name: fileName, status: published },
-          relationships: { [SOURCE_FIELD]: { data: { type: 'file--file', id: file.id } } },
+          relationships: { [type.sourceField]: { data: { type: 'file--file', id: file.id } } },
         },
       }),
     });
     return this.toMedia(((await response.json()) as { data: JsonApiResource }).data);
   }
 
+  /** A published page showing the form media `formMid` in its ONLYOFFICE form field */
+  async createNode(title: string, formMid: number): Promise<DrupalNode> {
+    const response = await this.request(`/node/${FORM_NODE_TYPE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': JSON_API },
+      body: JSON.stringify({
+        data: {
+          type: `node--${FORM_NODE_TYPE}`,
+          attributes: { title, status: true, [FORM_FIELD]: { target_id: formMid } },
+        },
+      }),
+    });
+    const node = ((await response.json()) as { data: JsonApiResource }).data;
+    return { uuid: node.id, nid: node.attributes.drupal_internal__nid };
+  }
+
+  async deleteNode(uuid: string): Promise<void> {
+    await this.request(`/node/${FORM_NODE_TYPE}/${uuid}`, { method: 'DELETE' });
+  }
+
   /**
    * The media with its current file: saving in the editor creates a new file entity and a new
    * media revision, so the file is always looked up through the media rather than remembered.
    */
-  async getMedia(uuid: string): Promise<DrupalMedia> {
-    const response = await this.request(`/media/${MEDIA_TYPE}/${uuid}?include=${SOURCE_FIELD},revision_user`);
+  async getMedia(uuid: string, type = DOCUMENT): Promise<DrupalMedia> {
+    const response = await this.request(`/media/${type.bundle}/${uuid}?include=${type.sourceField},revision_user`);
     const body = (await response.json()) as { data: JsonApiResource; included?: JsonApiResource[] };
     const included = (relationship: string) => {
       const target = body.data.relationships?.[relationship]?.data;
       return body.included?.find((resource) => resource.id === target?.id);
     };
-    return this.toMedia(body.data, included(SOURCE_FIELD), included('revision_user'));
+    return this.toMedia(body.data, included(type.sourceField), included('revision_user'));
   }
 
   /** Media with this exact name, unpublished ones included (the API client is an administrator) */
-  async findMedia(name: string): Promise<DrupalMedia[]> {
+  async findMedia(name: string, type = DOCUMENT): Promise<DrupalMedia[]> {
     const response = await this.request(
-      `/media/${MEDIA_TYPE}?filter[name]=${encodeURIComponent(name)}&include=${SOURCE_FIELD}`,
+      `/media/${type.bundle}?filter[name]=${encodeURIComponent(name)}&include=${type.sourceField}`,
     );
     const body = (await response.json()) as { data: JsonApiResource[]; included?: JsonApiResource[] };
     return body.data.map((media) => {
-      const fileId = media.relationships?.[SOURCE_FIELD]?.data?.id;
+      const fileId = media.relationships?.[type.sourceField]?.data?.id;
       return this.toMedia(media, body.included?.find((resource) => resource.id === fileId));
     });
   }
 
   async setPublished(uuid: string, published: boolean): Promise<void> {
-    await this.request(`/media/${MEDIA_TYPE}/${uuid}`, {
+    await this.request(`/media/${DOCUMENT.bundle}/${uuid}`, {
       method: 'PATCH',
       headers: { 'Content-Type': JSON_API },
-      body: JSON.stringify({ data: { type: `media--${MEDIA_TYPE}`, id: uuid, attributes: { status: published } } }),
+      body: JSON.stringify({ data: { type: `media--${DOCUMENT.bundle}`, id: uuid, attributes: { status: published } } }),
     });
   }
 
@@ -141,8 +175,8 @@ export class DrupalApi {
     return String(user.attributes.drupal_internal__uid);
   }
 
-  async downloadFile(uuid: string): Promise<Buffer> {
-    const { fileUrl } = await this.getMedia(uuid);
+  async downloadFile(uuid: string, type = DOCUMENT): Promise<Buffer> {
+    const { fileUrl } = await this.getMedia(uuid, type);
     if (!fileUrl) {
       throw new Error(`Drupal media ${uuid} has no file`);
     }
@@ -153,8 +187,8 @@ export class DrupalApi {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  async deleteMedia(uuid: string): Promise<void> {
-    await this.request(`/media/${MEDIA_TYPE}/${uuid}`, { method: 'DELETE' });
+  async deleteMedia(uuid: string, type = DOCUMENT): Promise<void> {
+    await this.request(`/media/${type.bundle}/${uuid}`, { method: 'DELETE' });
   }
 
   private toMedia(media: JsonApiResource, file?: JsonApiResource, revisionUser?: JsonApiResource): DrupalMedia {
