@@ -47,7 +47,8 @@ export class EditorPage {
    * which the openEditor/openEditorAs fixtures install before the page loads.
    */
   async config(): Promise<EditorConfig> {
-    return waitForEditorConfig(this.page, 1_000);
+    // Already recorded by now, but the check runs in the renderer the just-loaded editor still keeps busy
+    return waitForEditorConfig(this.page, 10_000);
   }
 
   async typeText(text: string): Promise<void> {
