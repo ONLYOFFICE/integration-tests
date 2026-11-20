@@ -279,11 +279,28 @@ export async function setup(ds: DocumentServer): Promise<void> {
   console.log('[nuxeo] Stack ready');
 }
 
+/**
+ * The whole Nuxeo log, saved into test-results/ before the stack goes: what the package did with
+ * Document Server's callbacks (e.g. a save refused for an outdated change token) is only there.
+ * Written by docker itself, since over a full run it outgrows execSync's output buffer.
+ */
+function saveContainerLog(): void {
+  const logFile = path.resolve(__dirname, '..', '..', 'test-results', `${NUXEO_CONTAINER}.container.log`);
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    stack.sh(`docker logs ${NUXEO_CONTAINER} > "${logFile}" 2>&1`, { ignoreErrors: true });
+    console.log(`[nuxeo] Log saved to ${logFile}`);
+  } catch (error) {
+    console.warn(`[nuxeo] Could not save the log: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 /** Stops and fully removes the Nuxeo stack along with its volumes */
 export function teardown(): void {
   if (reusingExisting) {
     return;
   }
+  saveContainerLog();
   console.log('[nuxeo] Removing stack...');
   stack.sh(`docker compose -p ${stack.COMPOSE_PROJECT} -f ${stack.COMPOSE_FILE} down --volumes --remove-orphans`, {
     ignoreErrors: true,
