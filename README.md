@@ -22,6 +22,7 @@ tests/
   setup/<system>.ts    # per-system setup/teardown (docker compose, plugin install, DS wiring)
   setup/registry.ts    # maps --project=<system> to the right setup/teardown
   shared/              # cross-platform scenarios (run in every project)
+  shared-settings/     # serial scenarios that change the plugin's connection settings
   alfresco/, confluence/, jira/, liferay/   # system-specific scenarios
 environments/          # stacks, one directory per system (alfresco/, confluence/, jira/, liferay/)
 ```
@@ -72,12 +73,14 @@ The first run takes longer: Alfresco/Confluence's cold start takes a few minutes
 - Document scope is the canvas: input via `keyboard`, verification by downloading the file and parsing its content (`extractText`). Autocorrect capitalizes the first letter — test markers should start with a capital letter.
 - Saving is asynchronous: after closing the editor we wait for the text to appear in the file content via `expect.poll` (the modified date changes on open already — it can't be used for waiting).
 - Tags: `@smoke` — fast run (`npm run test:smoke -- --project=<system>`).
+- A new shared scenario starts in `UNVERIFIED_SHARED` (`playwright.config.ts`): only the projects it was checked against run it.
+- Scenarios that change the plugin's settings for the whole stand live in `shared-settings/` and `<system>-settings/`. The `<system>-settings` project runs them one at a time, before the `<system>` project, which depends on it — `--project=<system>` runs both.
 
 ## How to add a new connector
 
 1. `packages/adapter-<system>/` — implement `HostAdapter`.
 2. `tests/fixtures.ts` — add `registerAdapter('<system>', ...)`.
-3. `playwright.config.ts` — add a project with `testMatch: ['shared/**', '<system>/**']`.
+3. `playwright.config.ts` — add `...system('<system>', { ignore: [...] })`; with `settings: true` (and `connectionSettings` in the adapter) it also gets the serial settings scenarios.
 4. `environments/<system>/docker-compose.yml` — the stack; add `tests/setup/<system>.ts`
    (setup/teardown) and register it in `tests/setup/registry.ts`.
 5. `environments/<system>/artifacts/` — where the plugin build(s) to install are dropped.

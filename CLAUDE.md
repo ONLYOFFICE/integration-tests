@@ -62,6 +62,8 @@ tests/
   setup/registry.ts        # selectedSystems() reads --project= from argv to decide what to boot
   shared/*.spec.ts         # cross-platform scenarios — run against every registered project
   <system>/*.spec.ts       # system-specific scenarios (matched only for that project)
+  shared-settings/*.spec.ts  # serial scenarios that change the plugin's connection settings
+  <system>-settings/*.spec.ts  # serial system-specific scenarios that change the plugin's settings
 environments/<system>/     # docker-compose.yml + artifacts/ (plugin builds) per host system
 resources/files/           # blank docx/xlsx/pptx templates used by createFile()
 ```
@@ -101,8 +103,10 @@ there is no command that runs multiple systems in one invocation (see Commands).
    login, createFile (via REST API), openInEditor, downloadFile, getModifiedAt,
    waitForSave, deleteFile.
 2. `tests/fixtures.ts` — add a `registerAdapter('<system>', () => new XAdapter(...))`.
-3. `playwright.config.ts` — add a project with
-   `testMatch: ['shared/**/*.spec.ts', '<system>/**/*.spec.ts']`.
+3. `playwright.config.ts` — add `...system('<system>', { ignore: [...] })` (shared scenarios the
+   plugin doesn't support, plus `UNVERIFIED_SHARED` until checked). With `settings: true` and an
+   adapter implementing `connectionSettings`, the system also gets a `<system>-settings` project
+   (tests/shared-settings + tests/<system>-settings).
 4. `environments/<system>/docker-compose.yml` — the stack; add `tests/setup/<system>.ts`
    (setup/teardown) and register it in `tests/setup/registry.ts`.
 5. `environments/<system>/artifacts/` — where the plugin build(s) to install are dropped
@@ -128,10 +132,18 @@ there is no command that runs multiple systems in one invocation (see Commands).
   typically only one file type (docx) is tagged, since xlsx/pptx exercise the same save path.
 - `baseURL` and `storageState` are resolved per-worker from the adapter (set once the
   stack address is known in global setup), not from static `playwright.config.ts` values.
+- A new shared scenario goes into `UNVERIFIED_SHARED` in `playwright.config.ts`, which every
+  project except those it was checked against ignores; a project drops it from its
+  `testIgnore` once it passes against that system's plugin.
 - `EditorPage.config()` returns the config the page handed to Docs' api.js (recorded by
   `CAPTURE_EDITOR_CONFIG`, installed by the openEditor fixtures). Scenarios that call the host
   the way Document Server does sign their requests with `packages/core/src/docs/jwt.ts`, using
   the stand's secret from `DOCUMENTSERVER_SECRET`.
+- Scenarios that change the plugin's settings for the whole stand go into tests/shared-settings
+  or tests/<system>-settings, never next to the parallel ones: the `<system>-settings` project
+  runs them one at a time, before the `<system>` project that depends on it (so
+  `--project=<system>` runs both), and each puts the settings back after itself. A failure there
+  skips the `<system>` project, as any Playwright dependency does.
 - Document Server's healthcheck passes long before its startup script ends, and that script
   restarts docservice/converter at its end, dropping open editors. `ds.startupFinished` waits
   for it: global setup awaits it before the tests, and a system setup that needs Document

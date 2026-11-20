@@ -17,6 +17,34 @@ export interface FileRef {
   type: FileType;
 }
 
+/** The plugin's settings for reaching Document Server */
+export interface DocsConnection {
+  /** Document Server address the browser loads the editor from */
+  url: string;
+  /** JWT secret; empty disables JWT in the plugin */
+  secret: string;
+  /** Header the JWT travels in between Document Server and the host */
+  header: string;
+}
+
+export interface ConnectionCheck {
+  /** Whether the plugin's own connection check passed */
+  ok: boolean;
+  /** What the plugin reported */
+  message: string;
+}
+
+/**
+ * Changing the plugin's connection settings the way an administrator does, for the serial
+ * scenarios in tests/shared-settings. Every call opens the settings in `page` (logged in as the
+ * default user).
+ */
+export interface ConnectionSettings {
+  read(page: Page): Promise<DocsConnection>;
+  /** Saves the settings and returns the result of the check the plugin runs on saving */
+  write(page: Page, connection: DocsConnection): Promise<ConnectionCheck>;
+}
+
 /**
  * Host system contract. Every connector (Alfresco, Confluence, ...)
  * implements this interface — shared scenarios in tests/shared are
@@ -33,6 +61,11 @@ export interface HostAdapter {
   readonly readOnlyUser: TestUser;
   /** Selector for the editor iframe on the host system page */
   readonly editorFrameSelector?: string;
+  /**
+   * Only adapters that implement it get the tests/shared-settings scenarios — see the settings
+   * option of system() in playwright.config.ts.
+   */
+  readonly connectionSettings?: ConnectionSettings;
 
   /** UI login; the result is cached by fixtures via storageState */
   login(page: Page, user: TestUser): Promise<void>;

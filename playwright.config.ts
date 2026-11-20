@@ -1,5 +1,45 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, PlaywrightTestProject } from '@playwright/test';
 import 'dotenv/config';
+
+/**
+ * Shared scenarios not yet verified against every system: each project runs them only once it
+ * has been checked against that system's plugin (then drop it from that project's testIgnore).
+ */
+const UNVERIFIED_SHARED = [
+  'shared/editor-permissions.spec.ts',
+  'shared/download-security.spec.ts',
+  'shared/callback-security.spec.ts',
+];
+
+/**
+ * The project of one system: the shared scenarios plus tests/<name>/. With `settings`, also a
+ * <name>-settings project the system's project depends on, so `--project=<name>` runs it first:
+ * tests/shared-settings/ (needs the adapter's connectionSettings) and tests/<name>-settings/.
+ * Those change the plugin's settings for the whole stand, so they run one at a time and before
+ * the scenarios that rely on working settings. A failure there skips the system's project, as
+ * with any Playwright dependency.
+ */
+function system(name: string, options: { ignore?: string[]; settings?: boolean } = {}): PlaywrightTestProject[] {
+  const project: PlaywrightTestProject = {
+    name,
+    testMatch: ['shared/**/*.spec.ts', `${name}/**/*.spec.ts`],
+    testIgnore: options.ignore ?? [],
+    // baseURL is set by the fixture from the adapter: the stack address
+    // is only known once global.setup runs (see tests/global.setup.ts)
+  };
+  if (!options.settings) {
+    return [project];
+  }
+  return [
+    {
+      name: `${name}-settings`,
+      testMatch: ['shared-settings/**/*.spec.ts', `${name}-settings/**/*.spec.ts`],
+      fullyParallel: false,
+      workers: 1,
+    },
+    { ...project, dependencies: [`${name}-settings`] },
+  ];
+}
 
 export default defineConfig({
   testDir: './tests',
@@ -20,36 +60,12 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    {
-      name: 'alfresco',
-      testMatch: ['shared/**/*.spec.ts', 'alfresco/**/*.spec.ts'],
-      // baseURL is set by the fixture from the adapter: the stack address
-      // is only known once global.setup runs (see tests/global.setup.ts)
-    },
-    {
-      name: 'confluence',
-      testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
-    },
-    {
-      name: 'jira',
-      testMatch: ['shared/**/*.spec.ts', 'jira/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
-    },
-    {
-      name: 'liferay',
-      testMatch: ['shared/**/*.spec.ts', 'liferay/**/*.spec.ts'],
-    },
-    {
-      name: 'mattermost',
-      testMatch: ['shared/**/*.spec.ts', 'mattermost/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
-    },
-    {
-      name: 'nuxeo',
-      testMatch: ['shared/**/*.spec.ts', 'nuxeo/**/*.spec.ts'],
-      // The package's callback service has no force-save handler (only editing/save/closed)
-      testIgnore: ['shared/force-save.spec.ts'],
-    },
+    ...system('alfresco', { ignore: UNVERIFIED_SHARED }),
+    ...system('confluence', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
+    ...system('jira', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
+    ...system('liferay', { ignore: UNVERIFIED_SHARED }),
+    ...system('mattermost', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
+    // The nuxeo package's callback service has no force-save handler (only editing/save/closed)
+    ...system('nuxeo', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
   ],
 });
