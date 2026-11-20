@@ -73,13 +73,15 @@ registerAdapter('mattermost', () => {
   });
 });
 
-registerAdapter('nuxeo', () => {
-  return new NuxeoAdapter({
+const nuxeo = () =>
+  new NuxeoAdapter({
     baseUrl: process.env.NUXEO_URL ?? 'http://127.0.0.1:8080',
     admin: { username: 'Administrator', password: 'Administrator' },
     secondUser: { username: 'autotest2', password: 'automation123' },
     readOnlyUser: { username: 'autotest3', password: 'automation123' },
   });
-});
+registerAdapter('nuxeo', nuxeo);
+// The serial project that changes the package's settings before the 'nuxeo' one runs (playwright.config.ts)
+registerAdapter('nuxeo-settings', nuxeo);
 
 export { test, expect };
