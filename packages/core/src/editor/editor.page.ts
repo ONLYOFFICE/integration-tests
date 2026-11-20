@@ -73,21 +73,24 @@ export class EditorPage {
   /** True once the toolbar shows, false if the editor broke on the known module race (see above) */
   private async toolbarOrBroken(timeoutMs = 90_000): Promise<boolean> {
     const toolbar = this.frame.locator('#toolbar');
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      if (await toolbar.isVisible().catch(() => false)) {
-        return true;
-      }
-      const broken = await this.page
-        .evaluate(() => Boolean((window as unknown as { __oitEditorBroken?: string }).__oitEditorBroken))
-        .catch(() => false);
-      if (broken) {
-        return false;
-      }
-      await this.page.waitForTimeout(500);
-    }
-    await expect(toolbar).toBeVisible({ timeout: 1 });
-    return true;
+    let state = 'loading' as 'loading' | 'ready' | 'broken';
+    // Two signals in different frames — the toolbar in Docs' iframe, the breakage on the host
+    // page's window — so neither a locator assertion nor waitForFunction can wait for both
+    await expect
+      .poll(
+        async () => {
+          if (await toolbar.isVisible().catch(() => false)) {
+            return (state = 'ready');
+          }
+          const broken = await this.page
+            .evaluate(() => Boolean((window as unknown as { __oitEditorBroken?: string }).__oitEditorBroken))
+            .catch(() => false);
+          return (state = broken ? 'broken' : 'loading');
+        },
+        { message: 'The Docs editor toolbar did not show', timeout: timeoutMs },
+      )
+      .not.toBe('loading');
+    return state === 'ready';
   }
 
   /**
