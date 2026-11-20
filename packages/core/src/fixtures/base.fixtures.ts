@@ -90,6 +90,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   storageState: ({ workerStorageState }, use) => use(workerStorageState),
 
+  // Every page of the default context records the editor config and state — also pages that get to
+  // the editor without openEditor (e.g. createFileViaPlugin), which EditorPage.save() relies on
+  context: async ({ context }, use) => {
+    await context.addInitScript(CAPTURE_EDITOR_CONFIG);
+    await use(context);
+  },
+
   editorTraffic: [
     async ({ context }, use, testInfo) => {
       const traffic = new EditorTraffic();
