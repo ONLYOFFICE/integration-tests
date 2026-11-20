@@ -68,7 +68,7 @@ export async function convertWithDocumentServer(url: string, fileType: string, o
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ ...request, token: signJwt(request, ds.secret) }),
   });
-  const body = await response.text();
+  const body = await response.text().catch((error: unknown) => `<body unreadable: ${error instanceof Error ? error.message : String(error)}>`);
   let result: { fileUrl?: string; endConvert?: boolean; error?: number } = {};
   try {
     result = JSON.parse(body);
