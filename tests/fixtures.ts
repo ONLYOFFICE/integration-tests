@@ -27,14 +27,17 @@ registerAdapter('confluence', () => {
   });
 });
 
-registerAdapter('drupal', () => {
-  return new DrupalAdapter({
+const drupal = () =>
+  new DrupalAdapter({
     baseUrl: process.env.DRUPAL_URL ?? 'http://127.0.0.1:8070',
     admin: { username: 'admin', password: 'admin' },
     secondUser: { username: 'autotest2', password: 'automation123' },
     readOnlyUser: { username: 'autotest3', password: 'automation123' },
+    ownerUser: { username: 'autotest4', password: 'automation123' },
   });
-});
+registerAdapter('drupal', drupal);
+// The serial project that changes the module's settings before the 'drupal' one runs (playwright.config.ts)
+registerAdapter('drupal-settings', drupal);
 
 registerAdapter('jira', () => {
   return new JiraAdapter({

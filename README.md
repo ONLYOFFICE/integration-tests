@@ -24,7 +24,8 @@ tests/
   setup/registry.ts    # maps --project=<system> to the right setup/teardown
   shared/              # cross-platform scenarios (run in every project)
   shared-settings/     # serial scenarios that change the plugin's connection settings
-  alfresco/, confluence/, jira/, liferay/   # system-specific scenarios
+  alfresco/, confluence/, drupal/, jira/, liferay/   # system-specific scenarios
+  drupal-settings/     # serial system-specific scenarios that change the plugin's settings
 environments/          # stacks, one directory per system (alfresco/, confluence/, jira/, liferay/)
 ```
 

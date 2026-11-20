@@ -70,6 +70,7 @@ export default defineConfig({
         'shared/create-via-plugin.spec.ts',
         'shared/convert.spec.ts',
       ],
+      settings: true,
     }),
     ...system('jira', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
     ...system('liferay', { ignore: UNVERIFIED_SHARED }),
