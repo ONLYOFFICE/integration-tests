@@ -61,14 +61,20 @@ export function signedCallbackBody(body: Record<string, unknown>, secret = docum
 export async function convertWithDocumentServer(url: string, fileType: string, outputType = fileType): Promise<string> {
   const ds = documentServer();
   const request = { async: false, filetype: fileType, outputtype: outputType, key: randomUUID(), title: `autotest.${fileType}`, url };
-  const response = await fetch(`${ds.url}converter`, {
+  // Docs' Conversion API endpoint (ConvertService.ashx is its older alias)
+  const endpoint = `${ds.url}converter`;
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ ...request, token: signJwt(request, ds.secret) }),
   });
-  const result = (await response.json().catch(() => ({}))) as { fileUrl?: string; endConvert?: boolean; error?: number };
+  const body = await response.text();
+  let result: { fileUrl?: string; endConvert?: boolean; error?: number } = {};
+  try {
+    result = JSON.parse(body);
+  } catch {}
   if (!response.ok || !result.endConvert || !result.fileUrl) {
-    throw new Error(`Document Server conversion of ${url} failed: HTTP ${response.status} ${JSON.stringify(result)}`);
+    throw new Error(`Document Server conversion of ${url} failed: POST ${endpoint} → HTTP ${response.status} ${body.slice(0, 500)}`);
   }
   return result.fileUrl;
 }
