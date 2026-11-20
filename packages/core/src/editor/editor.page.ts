@@ -1,4 +1,4 @@
-import { errors, expect, FrameLocator, Page } from '@playwright/test';
+import { errors, expect, FrameLocator, Page, test } from '@playwright/test';
 import type { EditorConfig } from './editor-config';
 
 /**
@@ -45,8 +45,40 @@ export class EditorPage {
   }
 
   async waitUntilLoaded(): Promise<void> {
-    await expect(this.frame.locator('#toolbar')).toBeVisible({ timeout: 90_000 });
+    if (!(await this.toolbarOrBroken())) {
+      // Known bug of Docs 10.0: web-apps/apps/common/main/lib/component/ColorPaletteExt.js is a
+      // module declared without dependencies (define([], …)) that extends Common.UI.BaseView right
+      // away; when RequireJS runs it before BaseView.js, the editor never starts. The presentation
+      // editor loads it, ~2 of 120 openings under load. Another load orders the modules anew.
+      try {
+        test.info().annotations.push({ type: 'known bug', description: 'Docs editor reloaded after the ColorPaletteExt.js module race' });
+      } catch {}
+      await this.page.reload();
+      if (!(await this.toolbarOrBroken())) {
+        throw new Error('The Docs editor broke on the ColorPaletteExt.js module race twice in a row');
+      }
+    }
     await expect(this.frame.locator('.asc-loadmask')).toHaveCount(0, { timeout: 90_000 });
+  }
+
+  /** True once the toolbar shows, false if the editor broke on the known module race (see above) */
+  private async toolbarOrBroken(timeoutMs = 90_000): Promise<boolean> {
+    const toolbar = this.frame.locator('#toolbar');
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await toolbar.isVisible().catch(() => false)) {
+        return true;
+      }
+      const broken = await this.page
+        .evaluate(() => Boolean((window as unknown as { __oitEditorBroken?: string }).__oitEditorBroken))
+        .catch(() => false);
+      if (broken) {
+        return false;
+      }
+      await this.page.waitForTimeout(500);
+    }
+    await expect(toolbar).toBeVisible({ timeout: 1 });
+    return true;
   }
 
   /**
@@ -63,7 +95,23 @@ export class EditorPage {
     await this.page.keyboard.type(text, { delay: 30 });
   }
 
-  async save(): Promise<void> {
+  /**
+   * Saves and waits until Document Server has every change: the editor hands them over in a
+   * round trip on its socket after Ctrl+S, and a page closed before it ends loses them — the
+   * session then closes "without changes" and no save ever reaches the host. A viewer never
+   * holds changes, so this returns at once there.
+   */
+  async save(timeoutMs = 60_000): Promise<void> {
+    if (!(await this.page.evaluate(() => (window as unknown as { __oitCaptureInstalled?: boolean }).__oitCaptureInstalled))) {
+      throw new Error('EditorPage.save() needs CAPTURE_EDITOR_CONFIG on the page, added before it loaded');
+    }
     await this.page.keyboard.press('Control+s');
+    await this.page
+      .waitForFunction(() => (window as unknown as { __oitDocumentModified?: boolean }).__oitDocumentModified !== true, undefined, {
+        timeout: timeoutMs,
+      })
+      .catch(() => {
+        throw new Error(`The editor still holds unsaved changes ${timeoutMs / 1000}s after Ctrl+S`);
+      });
   }
 }
