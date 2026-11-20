@@ -45,7 +45,7 @@ export const test = base.extend<NuxeoFixtures>({
     }
   },
 
-  pageAs: async ({ browser, nuxeo }, use) => {
+  pageAs: async ({ browser, nuxeo, editorTraffic }, use) => {
     const contexts: BrowserContext[] = [];
     await use(async (user, options = {}) => {
       const context = await browser.newContext({
@@ -54,6 +54,7 @@ export const test = base.extend<NuxeoFixtures>({
         ...(options.locale ? { locale: options.locale } : {}),
       });
       contexts.push(context);
+      editorTraffic.watchContext(context, user?.username ?? 'anonymous');
       await context.addInitScript(CAPTURE_EDITOR_CONFIG);
       const page = await context.newPage();
       if (user) {
