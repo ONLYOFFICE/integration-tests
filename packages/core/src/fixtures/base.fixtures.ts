@@ -2,6 +2,7 @@ import { BrowserContext, test as base, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CAPTURE_EDITOR_CONFIG } from '../editor/editor-config';
+import { EditorTraffic } from '../editor/editor-traffic';
 import { EditorPage } from '../editor/editor.page';
 import { FileRef, FileType, HostAdapter, LegacyFileType, TestUser } from '../types';
 
@@ -38,6 +39,12 @@ interface TestFixtures {
    * for scenarios that need more than one simultaneous editing session (e.g. co-editing).
    */
   openEditorAs: (user: TestUser, file: FileRef) => Promise<EditorPage>;
+  /**
+   * Records the WebSocket traffic and errors of the test's pages, attached to the result when the
+   * test fails (or always, with OIT_EDITOR_TRAFFIC=always). Watches the default context by itself;
+   * fixtures that open contexts of their own hand them to watchContext.
+   */
+  editorTraffic: EditorTraffic;
 }
 
 interface WorkerFixtures {
@@ -82,6 +89,25 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   storageState: ({ workerStorageState }, use) => use(workerStorageState),
+
+  // Every page of the default context records the editor config and state — also pages that get to
+  // the editor without openEditor (e.g. createFileViaPlugin), which EditorPage.save() relies on
+  context: async ({ context }, use) => {
+    await context.addInitScript(CAPTURE_EDITOR_CONFIG);
+    await use(context);
+  },
+
+  editorTraffic: [
+    async ({ context }, use, testInfo) => {
+      const traffic = new EditorTraffic();
+      traffic.watchContext(context, 'page');
+      await use(traffic);
+      if (testInfo.status !== testInfo.expectedStatus || process.env.OIT_EDITOR_TRAFFIC === 'always') {
+        await traffic.attachTo(testInfo);
+      }
+    },
+    { auto: true },
+  ],
 
   // The stack address is determined in global.setup (process.env.ALFRESCO_URL),
   // so baseURL is taken from the adapter in the worker, not from playwright.config
@@ -138,7 +164,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     });
   },
 
-  openEditorAs: async ({ browser, adapter }, use) => {
+  openEditorAs: async ({ browser, adapter, editorTraffic }, use) => {
     const contexts: BrowserContext[] = [];
     await use(async (user: TestUser, file: FileRef) => {
       // browser.newContext() defaults to the test's active `storageState` fixture (the admin
@@ -146,6 +172,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       // session here would silently start out already authenticated as the primary user
       const context = await browser.newContext({ baseURL: adapter.baseUrl, storageState: undefined });
       contexts.push(context);
+      editorTraffic.watchContext(context, user.username);
       await context.addInitScript(CAPTURE_EDITOR_CONFIG);
       const page = await context.newPage();
       await adapter.login(page, user);

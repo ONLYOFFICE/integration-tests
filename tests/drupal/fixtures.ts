@@ -81,7 +81,7 @@ export const test = base.extend<DrupalFixtures>({
     }
   },
 
-  pageAs: async ({ browser, drupal }, use) => {
+  pageAs: async ({ browser, drupal, editorTraffic }, use) => {
     const contexts: BrowserContext[] = [];
     await use(async (user, options = {}) => {
       const context = await browser.newContext({
@@ -90,6 +90,7 @@ export const test = base.extend<DrupalFixtures>({
         ...(options.userAgent ? { userAgent: options.userAgent } : {}),
       });
       contexts.push(context);
+      editorTraffic.watchContext(context, user?.username ?? 'anonymous');
       await context.addInitScript(CAPTURE_EDITOR_CONFIG);
       const page = await context.newPage();
       if (user) {
@@ -134,7 +135,7 @@ export function linkKey(params: unknown[], options: { expiresIn?: number; secret
  */
 export async function saveAsUrl(page: Page, media: { mid: number }): Promise<string | null> {
   const html = await (await page.request.get(editorPath(media))).text();
-  const match = html.match(/var saveAsUrl = (.*);/);
+  const match = html.match(/var saveAsUrl = ("(?:[^"\\]|\\.)*"|null);/);
   if (!match) {
     throw new Error('No saveAsUrl on the editor page');
   }
