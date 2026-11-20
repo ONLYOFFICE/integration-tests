@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import * as dns from 'node:dns/promises';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import { DS_CONTAINER, sh } from '../stack';
 
 export interface DocumentServer {
@@ -186,11 +188,13 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   const dsImage = process.env.DOCUMENTSERVER_IMAGE ?? 'onlyoffice/documentserver:latest';
   const secret = randomBytes(24).toString('hex');
 
+  // INFO or DEBUG puts what the editors' sessions did into the logs saveLogs() keeps (WARN by default)
+  const logLevel = process.env.DOCUMENTSERVER_LOG_LEVEL ? `-e DS_LOG_LEVEL=${process.env.DOCUMENTSERVER_LOG_LEVEL}` : '';
   console.log(`[document-server] Starting Document Server: ${dsImage} (container ${DS_CONTAINER}, port 80)...`);
   sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
   sh(
     `docker run -d --name ${DS_CONTAINER} -p 80:80 --add-host host.docker.internal:host-gateway ` +
-      `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=${header} ${dsImage}`,
+      `-e JWT_ENABLED=true -e JWT_SECRET=${secret} -e JWT_HEADER=${header} ${logLevel} ${dsImage}`,
   );
 
   await waitForDocumentServer(300_000);
@@ -207,5 +211,23 @@ export function stopDocumentServer(): void {
   if (process.env.DOCUMENTSERVER_URL) {
     return;
   }
+  saveLogs();
   sh(`docker rm -f -v ${DS_CONTAINER}`, { ignoreErrors: true });
+}
+
+/**
+ * Document Server's own logs (docservice, converter, nginx) and its container output, saved into
+ * test-results/<container>-logs before the container goes: what an editor that never loads or a
+ * callback that never comes looks like from Document Server's side is only there.
+ */
+function saveLogs(): void {
+  const dir = path.resolve(__dirname, '..', '..', 'test-results', `${DS_CONTAINER}-logs`);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    sh(`docker cp ${DS_CONTAINER}:/var/log/onlyoffice/documentserver "${dir}"`, { ignoreErrors: true });
+    sh(`docker logs ${DS_CONTAINER} > "${path.join(dir, 'container.log')}" 2>&1`, { ignoreErrors: true });
+    console.log(`[document-server] Logs saved to ${dir}`);
+  } catch (error) {
+    console.warn(`[document-server] Could not save the logs: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
