@@ -11,25 +11,42 @@ export const WORKSPACE_PATH = '/default-domain/workspaces/integration-tests';
 
 export interface NuxeoDocument {
   uid: string;
+  /** The document's name: the last segment of its path */
+  name: string;
   title: string;
   /** dc:modified, ISO-8601 */
   modified: string;
+  lastContributor?: string;
+  /** major.minor, from the uid schema */
+  version: string;
   /** file:content's filename, if the document carries a blob */
   fileName?: string;
+  mimeType?: string;
+  digest?: string;
+  /** Only present when the document is locked */
+  lockOwner?: string;
 }
 
 interface RawDocument {
   uid: string;
+  path: string;
   title: string;
+  lockOwner?: string;
   /** Only present when the request asked for schemas via the `properties` header */
   properties?: {
     'dc:modified'?: string;
-    'file:content'?: { name: string } | null;
+    'dc:lastContributor'?: string;
+    'uid:major_version'?: number;
+    'uid:minor_version'?: number;
+    'file:content'?: { name: string; 'mime-type'?: string; digest?: string } | null;
   };
 }
 
-/** Schemas to include in document responses (Nuxeo returns none by default) */
-const DOCUMENT_SCHEMAS = { properties: 'dublincore,file' };
+/**
+ * Schemas to include in document responses (Nuxeo returns none by default), and the lock (both
+ * spellings of the header: the older X-NXfetch.document and its newer alias)
+ */
+const DOCUMENT_HEADERS = { properties: 'dublincore,file,uid', 'fetch-document': 'lock', 'X-NXfetch.document': 'lock' };
 
 /**
  * The plugin's ConvertOperation answer — the Document Server Convert API response it relays. The
@@ -109,26 +126,34 @@ export class NuxeoApi {
   }
 
   private toDocument(raw: RawDocument): NuxeoDocument {
+    const blob = raw.properties?.['file:content'];
     return {
       uid: raw.uid,
+      name: raw.path.split('/').pop()!,
       title: raw.title,
       modified: raw.properties?.['dc:modified'] ?? '',
-      fileName: raw.properties?.['file:content']?.name,
+      lastContributor: raw.properties?.['dc:lastContributor'],
+      version: `${raw.properties?.['uid:major_version'] ?? 0}.${raw.properties?.['uid:minor_version'] ?? 0}`,
+      fileName: blob?.name,
+      mimeType: blob?.['mime-type'],
+      digest: blob?.digest,
+      lockOwner: raw.lockOwner,
     };
   }
 
   /**
    * Creates a `File` document in WORKSPACE_PATH with `content` as its main blob, through the batch
    * upload API: open a batch, upload the bytes as its file 0, then reference that batch entry from
-   * the new document's file:content.
+   * the new document's file:content. `title` defaults to the file name.
    */
-  async uploadDocument(name: string, content: Buffer): Promise<NuxeoDocument> {
+  async uploadDocument(name: string, content: Buffer, options: { title?: string } = {}): Promise<NuxeoDocument> {
     const { batchId } = (await (await this.request('/upload/', { method: 'POST' })).json()) as { batchId: string };
     await this.request(`/upload/${batchId}/0`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
-        'X-File-Name': name,
+        // Nuxeo URL-decodes the header, which can carry only ASCII as it is
+        'X-File-Name': encodeURIComponent(name),
         'X-File-Type': 'application/octet-stream',
       },
       body: new Uint8Array(content),
@@ -138,20 +163,39 @@ export class NuxeoApi {
       'POST',
       {
         'entity-type': 'document',
-        name,
+        name: name.replace(/[^\w.-]/g, '-'),
         type: 'File',
         properties: {
-          'dc:title': name,
+          'dc:title': options.title ?? name,
           'file:content': { 'upload-batch': batchId, 'upload-fileId': '0' },
         },
       },
-      DOCUMENT_SCHEMAS,
+      DOCUMENT_HEADERS,
     );
     return this.toDocument((await response.json()) as RawDocument);
   }
 
+  async createEmptyFile(name: string): Promise<NuxeoDocument> {
+    const response = await this.json(
+      `/path${WORKSPACE_PATH}`,
+      'POST',
+      { 'entity-type': 'document', name, type: 'File', properties: { 'dc:title': name } },
+      DOCUMENT_HEADERS,
+    );
+    return this.toDocument((await response.json()) as RawDocument);
+  }
+
+  /** Locks the document as this client's user — the way Nuxeo's own "Lock" action does, outside ONLYOFFICE */
+  async lock(uid: string): Promise<void> {
+    await this.operation('Document.Lock', {}, uid);
+  }
+
+  async unlock(uid: string): Promise<void> {
+    await this.operation('Document.Unlock', {}, uid);
+  }
+
   async getDocument(uid: string): Promise<NuxeoDocument> {
-    const response = await this.request(`/id/${uid}`, { headers: DOCUMENT_SCHEMAS });
+    const response = await this.request(`/id/${uid}`, { headers: DOCUMENT_HEADERS });
     return this.toDocument((await response.json()) as RawDocument);
   }
 
@@ -183,7 +227,7 @@ export class NuxeoApi {
    * operation its Web UI dialog calls. `type` is the editor's document type — word / cell /
    * slide (/ pdf). Returns the new document's uid.
    */
-  async createViaPlugin(title: string, type: 'word' | 'cell' | 'slide'): Promise<string> {
+  async createViaPlugin(title: string, type: 'word' | 'cell' | 'slide' | 'pdf'): Promise<string> {
     const uid = await this.operation('ONLYOFFICE.Create', { path: WORKSPACE_PATH, title, type, language: 'en' });
     if (typeof uid !== 'string' || !uid) {
       throw new Error(`ONLYOFFICE.Create returned no document id: ${JSON.stringify(uid)}`);
