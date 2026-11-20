@@ -1,6 +1,16 @@
 import { errors, expect, FrameLocator, Page, test } from '@playwright/test';
 import type { EditorConfig } from './editor-config';
 
+/** For waits' .catch(): a timeout gets `message`, any other failure (a crash, a navigation) stays as it is */
+function explainTimeout(message: string): (error: unknown) => never {
+  return (error) => {
+    if (!(error instanceof errors.TimeoutError)) {
+      throw error;
+    }
+    throw new Error(message, { cause: error });
+  };
+}
+
 /**
  * The config the page handed to Docs' api.js, without waiting for the editor to load — for pages
  * where it can't (e.g. while the host is set up with a JWT Document Server doesn't accept). The
@@ -11,16 +21,12 @@ export async function waitForEditorConfig(page: Page, timeoutMs = 30_000): Promi
     .waitForFunction(() => (window as unknown as { __oitEditorConfig?: EditorConfig }).__oitEditorConfig, undefined, {
       timeout: timeoutMs,
     })
-    .catch((error: unknown) => {
-      if (!(error instanceof errors.TimeoutError)) {
-        throw error;
-      }
-      throw new Error(
+    .catch(
+      explainTimeout(
         `No editor config was recorded within ${timeoutMs / 1000}s — was CAPTURE_EDITOR_CONFIG added to the page ` +
           'before it loaded, and did the page create the editor?',
-        { cause: error },
-      );
-    });
+      ),
+    );
   return (await handle.jsonValue()) as EditorConfig;
 }
 
@@ -124,9 +130,7 @@ export class EditorPage {
         before,
         { timeout: timeoutMs },
       )
-      .catch(() => {
-        throw new Error(`The editor didn't report the typed change within ${timeoutMs / 1000}s`);
-      });
+      .catch(explainTimeout(`The editor didn't report the typed change within ${timeoutMs / 1000}s`));
   }
 
   /**
@@ -146,9 +150,7 @@ export class EditorPage {
         .waitForFunction(() => (window as unknown as DocumentState).__oitDocumentModified !== true, undefined, {
           timeout: Math.max(deadline - Date.now(), 1),
         })
-        .catch(() => {
-          throw new Error(`The editor still holds unsaved changes ${timeoutMs / 1000}s after Ctrl+S`);
-        });
+        .catch(explainTimeout(`The editor still holds unsaved changes ${timeoutMs / 1000}s after Ctrl+S`));
       await this.page.waitForTimeout(STATE_SETTLE_MS);
       if (!(await this.page.evaluate(() => (window as unknown as DocumentState).__oitDocumentModified === true))) {
         return;
