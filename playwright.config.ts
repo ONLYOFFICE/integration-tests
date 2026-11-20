@@ -76,6 +76,6 @@ export default defineConfig({
     ...system('liferay', { ignore: UNVERIFIED_SHARED }),
     ...system('mattermost', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
     // The nuxeo package's callback service has no force-save handler (only editing/save/closed)
-    ...system('nuxeo', { ignore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED] }),
+    ...system('nuxeo', { ignore: ['shared/force-save.spec.ts'], settings: true }),
   ],
 });
