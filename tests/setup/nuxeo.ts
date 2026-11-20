@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { NuxeoApi, WORKSPACE_PATH } from '@adapters/nuxeo';
+import { failedChecks, NuxeoApi, ValidationResults, WORKSPACE_PATH } from '@adapters/nuxeo';
 import { stackFor } from '../stack';
 import type { DocumentServer } from './document-server';
 
@@ -178,8 +178,6 @@ async function ensureWorkspace(api: NuxeoApi): Promise<void> {
   await api.addPermission(uid, READONLY_USER, 'Read');
 }
 
-type ValidationResults = Record<string, { status?: string; error?: unknown }>;
-
 /** One save of the package settings; returns its connection-validation results (see configureDocumentServer) */
 async function saveSettings(api: NuxeoApi, settings: unknown): Promise<{ body: Record<string, any>; results: ValidationResults }> {
   const response = await api.request('/onlyoffice/settings', {
@@ -189,12 +187,6 @@ async function saveSettings(api: NuxeoApi, settings: unknown): Promise<{ body: R
   });
   const body = (await response.json().catch(() => ({}))) as Record<string, any>;
   return { body, results: (body.validationResults ?? {}) as ValidationResults };
-}
-
-function failedChecks(results: ValidationResults): string[] {
-  return Object.entries(results)
-    .filter(([, result]) => !result || typeof result !== 'object' || String(result.status).toLowerCase() !== 'success')
-    .map(([name]) => name);
 }
 
 /**
@@ -213,7 +205,9 @@ function failedChecks(results: ValidationResults): string[] {
  */
 async function configureDocumentServer(api: NuxeoApi, ds: DocumentServer): Promise<void> {
   console.log('[nuxeo] Configuring the package to use the Document Server...');
-  const current = (await (await api.request('/onlyoffice/settings')).json()) as {
+  // `extra` is what the endpoint adds for the settings page to read (the api.js path), not a
+  // setting — posted back, it would be stored as one
+  const { extra: _extra, ...current } = (await (await api.request('/onlyoffice/settings')).json()) as {
     security?: Record<string, unknown>;
     [key: string]: unknown;
   };
@@ -282,6 +276,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   await configureDocumentServer(api, ds);
 
   process.env.NUXEO_URL = NUXEO_URL;
+  // For scenarios that read what the package wrote to disk (tests/nuxeo/fixtures.ts)
+  process.env.NUXEO_CONTAINER = NUXEO_CONTAINER;
   console.log('[nuxeo] Stack ready');
 }
 
