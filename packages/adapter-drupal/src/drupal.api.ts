@@ -60,15 +60,19 @@ export class DrupalApi {
 
   /** Performs a request against /jsonapi; `path` is relative to it */
   async request(path: string, init: RequestInit = {}): Promise<Response> {
-    const response = await fetch(`${this.baseUrl}/jsonapi${path}`, {
-      ...init,
-      headers: { Accept: JSON_API, ...this.authHeader, ...(init.headers as Record<string, string> | undefined) },
-    });
+    const response = await this.send(path, init);
     if (!response.ok) {
       const body = await response.text().catch(() => '');
       throw new Error(`Drupal JSON:API ${init.method ?? 'GET'} ${path}: ${response.status} ${body}`);
     }
     return response;
+  }
+
+  private send(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${this.baseUrl}/jsonapi${path}`, {
+      ...init,
+      headers: { Accept: JSON_API, ...this.authHeader, ...(init.headers as Record<string, string> | undefined) },
+    });
   }
 
   /**
@@ -157,12 +161,15 @@ export class DrupalApi {
 
   /** Whether the file entity still exists — saving in the editor must keep the previous file */
   async fileExists(fileId: string): Promise<boolean> {
-    try {
-      await this.request(`/file/file/${fileId}`);
-      return true;
-    } catch {
+    const response = await this.send(`/file/file/${fileId}`);
+    if (response.status === 404) {
       return false;
     }
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Drupal JSON:API GET /file/file/${fileId}: ${response.status} ${body}`);
+    }
+    return true;
   }
 
   /** The numeric user id — the one Document Server's callbacks carry in `users` */
