@@ -1,4 +1,4 @@
-import { expect, FrameLocator, Page } from '@playwright/test';
+import { errors, expect, FrameLocator, Page } from '@playwright/test';
 import type { EditorConfig } from './editor-config';
 
 /**
@@ -11,8 +11,15 @@ export async function waitForEditorConfig(page: Page, timeoutMs = 30_000): Promi
     .waitForFunction(() => (window as unknown as { __oitEditorConfig?: EditorConfig }).__oitEditorConfig, undefined, {
       timeout: timeoutMs,
     })
-    .catch(() => {
-      throw new Error('No editor config was recorded — was CAPTURE_EDITOR_CONFIG added to the page before it loaded?');
+    .catch((error: unknown) => {
+      if (!(error instanceof errors.TimeoutError)) {
+        throw error;
+      }
+      throw new Error(
+        `No editor config was recorded within ${timeoutMs / 1000}s — was CAPTURE_EDITOR_CONFIG added to the page ` +
+          'before it loaded, and did the page create the editor?',
+        { cause: error },
+      );
     });
   return (await handle.jsonValue()) as EditorConfig;
 }
