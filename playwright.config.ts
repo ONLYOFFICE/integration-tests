@@ -1,6 +1,16 @@
 import { defineConfig, devices } from '@playwright/test';
 import 'dotenv/config';
 
+/**
+ * Shared scenarios not yet verified against every system: each project runs them only once it
+ * has been checked against that system's plugin (then drop it from that project's testIgnore).
+ */
+const UNVERIFIED_SHARED = [
+  'shared/editor-permissions.spec.ts',
+  'shared/download-security.spec.ts',
+  'shared/callback-security.spec.ts',
+];
+
 export default defineConfig({
   testDir: './tests',
   globalSetup: './tests/global.setup.ts',
@@ -23,33 +33,35 @@ export default defineConfig({
     {
       name: 'alfresco',
       testMatch: ['shared/**/*.spec.ts', 'alfresco/**/*.spec.ts'],
+      testIgnore: [...UNVERIFIED_SHARED],
       // baseURL is set by the fixture from the adapter: the stack address
       // is only known once global.setup runs (see tests/global.setup.ts)
     },
     {
       name: 'confluence',
       testMatch: ['shared/**/*.spec.ts', 'confluence/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED],
     },
     {
       name: 'jira',
       testMatch: ['shared/**/*.spec.ts', 'jira/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED],
     },
     {
       name: 'liferay',
       testMatch: ['shared/**/*.spec.ts', 'liferay/**/*.spec.ts'],
+      testIgnore: [...UNVERIFIED_SHARED],
     },
     {
       name: 'mattermost',
       testMatch: ['shared/**/*.spec.ts', 'mattermost/**/*.spec.ts'],
-      testIgnore: ['shared/force-save.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED],
     },
     {
       name: 'nuxeo',
       testMatch: ['shared/**/*.spec.ts', 'nuxeo/**/*.spec.ts'],
       // The package's callback service has no force-save handler (only editing/save/closed)
-      testIgnore: ['shared/force-save.spec.ts'],
+      testIgnore: ['shared/force-save.spec.ts', ...UNVERIFIED_SHARED],
     },
   ],
 });

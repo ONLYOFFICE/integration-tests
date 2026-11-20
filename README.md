@@ -72,6 +72,7 @@ The first run takes longer: Alfresco/Confluence's cold start takes a few minutes
 - Document scope is the canvas: input via `keyboard`, verification by downloading the file and parsing its content (`extractText`). Autocorrect capitalizes the first letter — test markers should start with a capital letter.
 - Saving is asynchronous: after closing the editor we wait for the text to appear in the file content via `expect.poll` (the modified date changes on open already — it can't be used for waiting).
 - Tags: `@smoke` — fast run (`npm run test:smoke -- --project=<system>`).
+- A new shared scenario starts in `UNVERIFIED_SHARED` (`playwright.config.ts`): only the projects it was checked against run it.
 
 ## How to add a new connector
 
