@@ -23,7 +23,8 @@ export interface EditorConfig {
  * Init script that records the config every `new DocsAPI.DocEditor(placeholder, config)` on the
  * page is given, in window.__oitEditorConfig, and keeps the editor's onDocumentStateChange in
  * window.__oitDocumentModified: true while the editor holds changes Document Server hasn't got
- * yet (see EditorPage.save()). Docs' api.js creates DocsAPI with
+ * yet (see EditorPage.save()), and in window.__oitDocumentModifiedCount how many times it turned
+ * true, so a brief true → false that a poll would miss still shows. Docs' api.js creates DocsAPI with
  * `window.DocsAPI = window.DocsAPI || {}` and assigns DocEditor to it afterwards, so both are
  * trapped with setters; DocEditor itself is wrapped in a Proxy, which leaves its static members
  * (DocEditor.version() and the like) and its behaviour untouched.
@@ -57,6 +58,7 @@ export const CAPTURE_EDITOR_CONFIG = `(() => {
     const onDocumentStateChange = config.events.onDocumentStateChange;
     config.events.onDocumentStateChange = function (event) {
       window.__oitDocumentModified = !!(event && event.data);
+      if (window.__oitDocumentModified) window.__oitDocumentModifiedCount = (window.__oitDocumentModifiedCount || 0) + 1;
       if (typeof onDocumentStateChange === 'function') return onDocumentStateChange.apply(this, arguments);
     };
   };

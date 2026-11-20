@@ -27,6 +27,15 @@ export async function waitForEditorConfig(page: Page, timeoutMs = 30_000): Promi
 /** iframe that Document Server's api.js creates inside the host system page */
 const DEFAULT_FRAME_SELECTOR = 'iframe[name="frameEditor"]';
 
+const STATE_SETTLE_MS = 1_000;
+
+/** What CAPTURE_EDITOR_CONFIG keeps on the host page's window */
+interface DocumentState {
+  __oitCaptureInstalled?: boolean;
+  __oitDocumentModified?: boolean;
+  __oitDocumentModifiedCount?: number;
+}
+
 /**
  * Wrapper around the ONLYOFFICE editor. The toolbar and panels are regular DOM
  * inside the iframe, while the document area is a canvas: input is keyboard-only,
@@ -90,9 +99,31 @@ export class EditorPage {
     return waitForEditorConfig(this.page, 10_000);
   }
 
-  async typeText(text: string): Promise<void> {
+  /**
+   * Types into the document and, in an editor that can edit, waits until it reports holding the
+   * change — otherwise save() could see the state from before the typing and return at once.
+   */
+  async typeText(text: string, timeoutMs = 30_000): Promise<void> {
+    await this.assertCaptureInstalled('typeText');
+    const before = await this.page.evaluate(() => (window as unknown as DocumentState).__oitDocumentModifiedCount ?? 0);
     await this.frame.locator('#editor_sdk').click();
     await this.page.keyboard.type(text, { delay: 30 });
+    if (!(await this.canEdit())) {
+      return;
+    }
+    await this.page
+      .waitForFunction(
+        (count) => {
+          const state = window as unknown as DocumentState;
+          // Already true before the typing and still so: no new event comes, the change joins the pending ones
+          return (state.__oitDocumentModifiedCount ?? 0) > count || state.__oitDocumentModified === true;
+        },
+        before,
+        { timeout: timeoutMs },
+      )
+      .catch(() => {
+        throw new Error(`The editor didn't report the typed change within ${timeoutMs / 1000}s`);
+      });
   }
 
   /**
@@ -102,16 +133,34 @@ export class EditorPage {
    * holds changes, so this returns at once there.
    */
   async save(timeoutMs = 60_000): Promise<void> {
-    if (!(await this.page.evaluate(() => (window as unknown as { __oitCaptureInstalled?: boolean }).__oitCaptureInstalled))) {
-      throw new Error('EditorPage.save() needs CAPTURE_EDITOR_CONFIG on the page, added before it loaded');
-    }
+    await this.assertCaptureInstalled('save');
     await this.page.keyboard.press('Control+s');
-    await this.page
-      .waitForFunction(() => (window as unknown as { __oitDocumentModified?: boolean }).__oitDocumentModified !== true, undefined, {
-        timeout: timeoutMs,
-      })
-      .catch(() => {
-        throw new Error(`The editor still holds unsaved changes ${timeoutMs / 1000}s after Ctrl+S`);
-      });
+    const deadline = Date.now() + timeoutMs;
+    // The state crosses from the editor's frame in messages; a false seen here may be an earlier
+    // one with the true for the latest change still on its way, so it must hold for a while
+    for (;;) {
+      await this.page
+        .waitForFunction(() => (window as unknown as DocumentState).__oitDocumentModified !== true, undefined, {
+          timeout: Math.max(deadline - Date.now(), 1),
+        })
+        .catch(() => {
+          throw new Error(`The editor still holds unsaved changes ${timeoutMs / 1000}s after Ctrl+S`);
+        });
+      await this.page.waitForTimeout(STATE_SETTLE_MS);
+      if (!(await this.page.evaluate(() => (window as unknown as DocumentState).__oitDocumentModified === true))) {
+        return;
+      }
+    }
+  }
+
+  private async canEdit(): Promise<boolean> {
+    const config = await this.config();
+    return config.editorConfig.mode !== 'view' && config.document.permissions?.edit !== false;
+  }
+
+  private async assertCaptureInstalled(method: string): Promise<void> {
+    if (!(await this.page.evaluate(() => (window as unknown as DocumentState).__oitCaptureInstalled))) {
+      throw new Error(`EditorPage.${method}() needs CAPTURE_EDITOR_CONFIG on the page, added before it loaded`);
+    }
   }
 }
