@@ -277,6 +277,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   await ensureUser(api, SECOND_USER, SECOND_PASSWORD, 'Second');
   await ensureUser(api, READONLY_USER, READONLY_PASSWORD, 'ReadOnly');
   await ensureWorkspace(api);
+  // Saving runs a check that converts a file in Document Server, which fails while it restarts its services
+  await ds.startupFinished;
   await configureDocumentServer(api, ds);
 
   process.env.NUXEO_URL = NUXEO_URL;

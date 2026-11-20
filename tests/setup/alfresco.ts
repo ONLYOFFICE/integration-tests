@@ -74,6 +74,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
     secondUser: { username: 'autotest2', password: 'automation123' },
     readOnlyUser: { username: 'autotest3', password: 'automation123' },
   });
+  // The check converts a file in Document Server, which fails while it restarts its services
+  await ds.startupFinished;
   await adapter.validateDocumentServer();
 
   // Force Save is off by default — without it, pressing Save in an open editing session has

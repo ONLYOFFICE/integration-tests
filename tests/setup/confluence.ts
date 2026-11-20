@@ -416,6 +416,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   await ensureUser(session, SECOND_USER, SECOND_PASSWORD, 'Autotest Second');
   await ensureUser(session, READONLY_USER, READONLY_PASSWORD, 'Autotest ReadOnly');
   await installPlugin(session);
+  // Saving runs a check that converts a file in Document Server, which fails while it restarts its services
+  await ds.startupFinished;
   await configureDocumentServer(session, ds);
   await warmUpEditor(session);
 
