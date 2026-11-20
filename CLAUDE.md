@@ -128,3 +128,7 @@ there is no command that runs multiple systems in one invocation (see Commands).
   typically only one file type (docx) is tagged, since xlsx/pptx exercise the same save path.
 - `baseURL` and `storageState` are resolved per-worker from the adapter (set once the
   stack address is known in global setup), not from static `playwright.config.ts` values.
+- Document Server's healthcheck passes long before its startup script ends, and that script
+  restarts docservice/converter at its end, dropping open editors. `ds.startupFinished` waits
+  for it: global setup awaits it before the tests, and a system setup that needs Document
+  Server working (e.g. a conversion in a connection check) awaits it first.

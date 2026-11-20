@@ -227,6 +227,8 @@ export async function setup(ds: DocumentServer): Promise<void> {
   const { teamId, channelId } = await resolveTeamAndChannelIds(session);
   await installPlugin(session);
   await configureDocumentServer(session, ds);
+  // A converter warmed up before Document Server restarts its services is cold again afterwards
+  await ds.startupFinished;
   await warmUpConverter(session, channelId);
 
   process.env.MATTERMOST_URL = MATTERMOST_URL;
