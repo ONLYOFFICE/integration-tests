@@ -134,7 +134,7 @@ export function linkKey(params: unknown[], options: { expiresIn?: number; secret
  */
 export async function saveAsUrl(page: Page, media: { mid: number }): Promise<string | null> {
   const html = await (await page.request.get(editorPath(media))).text();
-  const match = html.match(/var saveAsUrl = (.*);/);
+  const match = html.match(/var saveAsUrl = ("(?:[^"\\]|\\.)*"|null);/);
   if (!match) {
     throw new Error('No saveAsUrl on the editor page');
   }
