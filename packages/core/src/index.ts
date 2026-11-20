@@ -1,6 +1,7 @@
 export * from './types';
 export * from './editor/editor.page';
 export * from './editor/editor-config';
+export * from './editor/editor-traffic';
 export * from './docs/jwt';
 export * from './verify/docx';
 export * from './verify/xlsx';
