@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { FORM_FIELD, FORM_NODE_TYPE } from '@adapters/drupal';
 import { stackFor, waitForHttp } from '../stack';
 import type { DocumentServer } from './document-server';
 import { drupalDrush, drupalExec } from './drupal-drush';
@@ -29,8 +30,6 @@ const OWNER_ROLE = {
 };
 
 const PRIVATE_FILES = '/opt/drupal/private';
-const FORM_NODE_TYPE = 'oit_form_page';
-const FORM_FIELD = 'field_oit_form';
 
 // See tests/setup/nuxeo.ts: setup() overwrites DRUPAL_URL, so teardown() can't re-check it.
 let reusingExisting = false;
