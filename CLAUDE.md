@@ -128,6 +128,10 @@ there is no command that runs multiple systems in one invocation (see Commands).
   typically only one file type (docx) is tagged, since xlsx/pptx exercise the same save path.
 - `baseURL` and `storageState` are resolved per-worker from the adapter (set once the
   stack address is known in global setup), not from static `playwright.config.ts` values.
+- `EditorPage.config()` returns the config the page handed to Docs' api.js (recorded by
+  `CAPTURE_EDITOR_CONFIG`, installed by the openEditor fixtures). Scenarios that call the host
+  the way Document Server does sign their requests with `packages/core/src/docs/jwt.ts`, using
+  the stand's secret from `DOCUMENTSERVER_SECRET`.
 - Document Server's healthcheck passes long before its startup script ends, and that script
   restarts docservice/converter at its end, dropping open editors. `ds.startupFinished` waits
   for it: global setup awaits it before the tests, and a system setup that needs Document

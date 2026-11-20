@@ -202,6 +202,11 @@ export async function startDocumentServer(): Promise<DocumentServer> {
   const host = await detectHostIp();
   const url = `http://${host}/`;
   console.log(`[document-server] Host IP: ${host} (Document Server: ${url})`);
+  // For the scenarios that call the host system the way Document Server does (packages/core/src/docs/jwt.ts).
+  // Not DOCUMENTSERVER_URL: that one means "reuse an existing Document Server" to the setup and teardown.
+  process.env.OIT_DOCUMENTSERVER_URL = url;
+  process.env.DOCUMENTSERVER_SECRET = secret;
+  process.env.DOCUMENTSERVER_HEADER = header;
 
   return { url, secret, host, header, startupFinished: waitForStartupFinished(300_000) };
 }
