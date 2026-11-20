@@ -41,9 +41,13 @@ function drush(...args: string[]): string {
 /**
  * The container log and the watchdog, also saved into test-results/ (uploaded as an artifact by
  * .github/workflows/e2e.yml): the watchdog lives in the stack's database, which global.teardown
- * removes, and it holds what went wrong in Document Server's callbacks.
+ * removes, and it holds what went wrong in Document Server's callbacks. The returned report keeps
+ * only the tail of the container log; the whole log goes into its own file, written by docker
+ * itself since it outgrows execSync's output buffer over a full run.
  */
 function describeState(watchdogCount: number): string {
+  const resultsDir = path.resolve(__dirname, '..', '..', 'test-results');
+  const fullLog = path.join(resultsDir, `${DRUPAL_CONTAINER}.container.log`);
   const logs = stack.sh(`docker logs --tail 200 ${DRUPAL_CONTAINER} 2>&1`, { ignoreErrors: true });
   let watchdog = '';
   try {
@@ -51,12 +55,13 @@ function describeState(watchdogCount: number): string {
   } catch (error) {
     watchdog = error instanceof Error ? error.message : String(error);
   }
-  const report = `--- container log:\n${logs || '(unavailable)'}\n--- watchdog:\n${watchdog || '(empty)'}`;
+  const report = `--- container log (tail):\n${logs || '(unavailable)'}\n--- watchdog:\n${watchdog || '(empty)'}`;
   try {
-    const logFile = path.resolve(__dirname, '..', '..', 'test-results', `${DRUPAL_CONTAINER}.log`);
-    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.mkdirSync(resultsDir, { recursive: true });
+    stack.sh(`docker logs ${DRUPAL_CONTAINER} > "${fullLog}" 2>&1`, { ignoreErrors: true });
+    const logFile = path.join(resultsDir, `${DRUPAL_CONTAINER}.log`);
     fs.writeFileSync(logFile, report);
-    return `${report}\n--- saved to ${logFile}`;
+    return `${report}\n--- saved to ${logFile}, the whole container log to ${fullLog}`;
   } catch {
     return report;
   }
