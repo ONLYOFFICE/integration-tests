@@ -21,7 +21,10 @@ export interface EditorConfig {
 
 /**
  * Init script that records the config every `new DocsAPI.DocEditor(placeholder, config)` on the
- * page is given, in window.__oitEditorConfig. Docs' api.js creates DocsAPI with
+ * page is given, in window.__oitEditorConfig, and keeps the editor's onDocumentStateChange in
+ * window.__oitDocumentModified: true while the editor holds changes Document Server hasn't got
+ * yet (see EditorPage.save()), and in window.__oitDocumentModifiedCount how many times it turned
+ * true, so a brief true → false that a poll would miss still shows. Docs' api.js creates DocsAPI with
  * `window.DocsAPI = window.DocsAPI || {}` and assigns DocEditor to it afterwards, so both are
  * trapped with setters; DocEditor itself is wrapped in a Proxy, which leaves its static members
  * (DocEditor.version() and the like) and its behaviour untouched.
@@ -30,10 +33,34 @@ export const CAPTURE_EDITOR_CONFIG = `(() => {
   if (window.__oitCaptureInstalled) return;
   window.__oitCaptureInstalled = true;
 
+  // The known module race of Docs (see EditorPage.waitUntilLoaded) breaks the editor's frame; it
+  // is told to the host page as a string, which Docs' own message handler drops as not its JSON
+  window.addEventListener('error', (event) => {
+    const where = String(event.filename || '') + ' ' + String((event.error && event.error.stack) || '');
+    if (where.indexOf('ColorPaletteExt.js') !== -1) {
+      try {
+        window.top.postMessage('oit-editor-broken:' + event.message, '*');
+      } catch (e) {}
+    }
+  });
+  window.addEventListener('message', (event) => {
+    if (typeof event.data === 'string' && event.data.indexOf('oit-editor-broken:') === 0) {
+      window.__oitEditorBroken = event.data.slice('oit-editor-broken:'.length);
+    }
+  });
+
   const record = (config) => {
     try {
       window.__oitEditorConfig = JSON.parse(JSON.stringify(config));
     } catch (e) {}
+    if (!config || typeof config !== 'object') return;
+    config.events = config.events || {};
+    const onDocumentStateChange = config.events.onDocumentStateChange;
+    config.events.onDocumentStateChange = function (event) {
+      window.__oitDocumentModified = !!(event && event.data);
+      if (window.__oitDocumentModified) window.__oitDocumentModifiedCount = (window.__oitDocumentModifiedCount || 0) + 1;
+      if (typeof onDocumentStateChange === 'function') return onDocumentStateChange.apply(this, arguments);
+    };
   };
   const wrap = (DocEditor) =>
     typeof DocEditor === 'function'
