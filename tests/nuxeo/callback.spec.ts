@@ -4,9 +4,10 @@ import { docxOnDocumentServer, editorConfigOf, expect, test, uniqueName } from '
 
 /**
  * The package's callback endpoint (/api/v1/onlyoffice/callback/{id}?token=…): the token in its
- * query is a Nuxeo authentication token of the user who opened the editor, so the callback acts
- * as that user. The shared callback-security scenario covers the JWT itself; real saves through
- * the editor are covered by the shared edit-save scenarios.
+ * query is the package's own, signed for the callback of one document in one editing session and
+ * naming the user who opened the editor, so the callback acts as that user. The shared
+ * callback-security scenario covers the JWT itself; real saves through the editor are covered by
+ * the shared edit-save scenarios.
  */
 
 interface Answer {
@@ -165,56 +166,77 @@ test.describe('callback', () => {
     }
   });
 
-  test('a callback without the Nuxeo token of its user is not served', async () => {
+  test('a callback without the token of its link is not served', async () => {
     const anonymous = callbackUrl.replace(/\?.*$/, '');
 
     expect((await post(anonymous, signedCallbackBody({ key: config.document.key, status: 4 }))).status).toBe(401);
   });
 
-  test('a callback for a document that does not exist answers 404', async () => {
-    expect(await post(forDocument(callbackUrl, randomUUID()), signedCallbackBody({ key: 'x', status: 4 }))).toEqual({
-      status: 404,
-      error: 1,
-    });
+  test('the link of a document is refused for any other document', async ({ createFile }) => {
+    for (const other of [randomUUID(), (await createFile('docx')).id]) {
+      expect(await post(forDocument(callbackUrl, other), signedCallbackBody({ key: config.document.key, status: 4 })), other).toEqual({
+        status: 401,
+        error: 1,
+      });
+    }
   });
 
-  test('only POST is allowed', async () => {
-    expect((await fetch(callbackUrl)).status).toBe(405);
+  test('the token of the download link is refused for the callback', async () => {
+    const url = callbackUrl.replace(/\?.*$/, `?token=${new URL(config.document.url).searchParams.get('token')}`);
+
+    expect(await post(url, signedCallbackBody({ key: config.document.key, status: 4 }))).toEqual({ status: 401, error: 1 });
+  });
+
+  test('the link is refused for another editing session of the document', async ({ nuxeo }) => {
+    const before = await nuxeo.api.getDocument(uid);
+
+    expect(await post(callbackUrl, signedCallbackBody(save({ key: `${config.document.key}x` })))).toEqual({
+      status: 401,
+      error: 1,
+    });
+    expect((await nuxeo.api.getDocument(uid)).digest).toBe(before.digest);
+  });
+
+  test('only POST is served', async () => {
+    expect((await fetch(callbackUrl)).status).toBe(401);
   });
 });
 
-test('the callback of a user saves nothing to a document that user may only read', async ({
+test('the callback acts with the permissions its user has now: a document made read-only gets nothing saved', async ({
   createFile,
   createDocument,
   nuxeo,
   page,
   pageAs,
 }) => {
-  // A callback URL of secondUser, who may edit the documents of the workspace…
+  // The editor of secondUser, who may edit the documents of the workspace…
   const own = await createFile('docx');
-  const callbackUrl = (await editorConfigOf(await pageAs(nuxeo.secondUser), own.id)).editorConfig.callbackUrl!;
-  expect(callbackUrl).toBeTruthy();
-  // …pointed at a document secondUser may only read
-  const target = await createDocument(uniqueName('docx'), await nuxeo.downloadFile(own));
-  await nuxeo.api.blockPermissionInheritance(target.uid);
-  await nuxeo.api.addPermission(target.uid, nuxeo.secondUser.username, 'Read');
+  const config = await editorConfigOf(await pageAs(nuxeo.secondUser), own.id);
+  expect(config.editorConfig.callbackUrl).toBeTruthy();
+  const before = await nuxeo.api.getDocument(own.id);
+  // …on a document secondUser may only read by the time of the save
+  await nuxeo.api.blockPermissionInheritance(own.id);
+  await nuxeo.api.addPermission(own.id, nuxeo.secondUser.username, 'Read');
   const url = await docxOnDocumentServer(page, createDocument, `Autotest-${Date.now()}`);
 
   const answer = await post(
-    forDocument(callbackUrl, target.uid),
-    signedCallbackBody({ key: 'x', status: 2, url, users: [nuxeo.secondUser.username] }),
+    config.editorConfig.callbackUrl!,
+    signedCallbackBody({ key: config.document.key, status: 2, url, users: [nuxeo.secondUser.username] }),
   );
   expect(answer).toEqual({ status: 403, error: 1 });
-  expect((await nuxeo.api.getDocument(target.uid)).digest).toBe(target.digest);
+  expect((await nuxeo.api.getDocument(own.id)).digest).toBe(before.digest);
 });
 
-test('the callback of a user cannot reach a document that user may not see', async ({ createFile, nuxeo, pageAs }) => {
+test('the callback acts with the permissions its user has now: a document hidden meanwhile is not reached', async ({
+  createFile,
+  nuxeo,
+  pageAs,
+}) => {
   const own = await createFile('docx');
-  const callbackUrl = (await editorConfigOf(await pageAs(nuxeo.secondUser), own.id)).editorConfig.callbackUrl!;
-  const hidden = await createFile('docx');
-  await nuxeo.restrictToReadOnly(hidden);
+  const config = await editorConfigOf(await pageAs(nuxeo.secondUser), own.id);
+  await nuxeo.restrictToReadOnly(own);
 
-  expect(await post(forDocument(callbackUrl, hidden.id), signedCallbackBody({ key: 'x', status: 4 }))).toEqual({
+  expect(await post(config.editorConfig.callbackUrl!, signedCallbackBody({ key: config.document.key, status: 4 }))).toEqual({
     status: 403,
     error: 1,
   });

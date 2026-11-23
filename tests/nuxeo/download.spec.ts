@@ -5,10 +5,16 @@ import { editorConfigOf, expect, test } from './fixtures';
 /**
  * The routes Document Server calls without a session: the file download
  * (/api/v1/onlyoffice/download/{id}?token=…) and the test file of the connection check
- * (/api/v1/onlyoffice/test-txt). The token in the query authenticates as a Nuxeo user, the JWT in
- * the header as Document Server — both are needed. The shared download-security scenario covers
- * the JWT on a real link.
+ * (/api/v1/onlyoffice/test-txt). The token in the query is the package's own, signed for one
+ * operation on one document and naming the user it acts as; the JWT in the header authenticates
+ * Document Server — both are needed. The shared download-security scenario covers the JWT on a
+ * real link.
  */
+
+/** The link token of a url the package hands Document Server */
+function linkTokenOf(url: string): string {
+  return new URL(url).searchParams.get('token')!;
+}
 
 /** Headers of a download request whose JWT carries `claims` besides the request itself */
 function signedWith(url: string, claims: Record<string, unknown>): Record<string, string> {
@@ -22,11 +28,14 @@ async function serves(response: Response, file: Buffer): Promise<boolean> {
 
 test.describe('download', () => {
   let downloadUrl: string;
+  let callbackUrl: string;
   let content: Buffer;
 
   test.beforeEach(async ({ createFile, nuxeo, page }) => {
     const file = await createFile('docx');
-    downloadUrl = (await editorConfigOf(page, file.id)).document.url;
+    const config = await editorConfigOf(page, file.id);
+    downloadUrl = config.document.url;
+    callbackUrl = config.editorConfig.callbackUrl!;
     content = await nuxeo.downloadFile(file);
   });
 
@@ -45,65 +54,70 @@ test.describe('download', () => {
     );
   });
 
-  test('the link does not work without the Nuxeo token of its user', async () => {
+  test('the link does not work without its token', async () => {
     const anonymous = downloadUrl.replace(/\?.*$/, '');
     expect((await fetch(anonymous, { headers: downloadHeaders(anonymous) })).status).toBe(401);
   });
 
-  test('a document that does not exist answers 404', async () => {
-    const url = forDocument(randomUUID());
-    expect((await fetch(url, { headers: downloadHeaders(url) })).status).toBe(404);
+  test('the link of a document is refused for any other document', async ({ createFile }) => {
+    for (const uid of [randomUUID(), (await createFile('docx')).id]) {
+      const url = forDocument(uid);
+      expect((await fetch(url, { headers: downloadHeaders(url) })).status, uid).toBe(401);
+    }
   });
 
-  test('the link of a user does not serve a document that user may not see', async ({ createFile, nuxeo, pageAs }) => {
+  test('the token of the callback link is refused for the download', async () => {
+    const url = downloadUrl.replace(/\?.*$/, `?token=${linkTokenOf(callbackUrl)}`);
+    expect((await fetch(url, { headers: downloadHeaders(url) })).status).toBe(401);
+  });
+
+  test('the link token does not authenticate anywhere else in Nuxeo', async ({ nuxeo }) => {
+    const token = linkTokenOf(downloadUrl);
+    const me = `${nuxeo.baseUrl}/nuxeo/api/v1/me`;
+
+    expect((await fetch(`${me}?token=${token}`)).status, 'as the token of a Nuxeo request').toBe(401);
+    expect((await fetch(me, { headers: { 'X-Authentication-Token': token } })).status, 'as a Nuxeo token').toBe(401);
+  });
+
+  test('the link acts with the permissions its user has now', async ({ createFile, nuxeo, pageAs }) => {
     const own = await createFile('docx');
     const url = (await editorConfigOf(await pageAs(nuxeo.secondUser), own.id)).document.url;
-    const hidden = await createFile('docx');
-    await nuxeo.restrictToReadOnly(hidden);
+    // secondUser may no longer see the document
+    await nuxeo.restrictToReadOnly(own);
 
-    const hiddenUrl = url.replace(/\/download\/[^/?]+/, `/download/${hidden.id}`);
-    expect(await serves(await fetch(hiddenUrl, { headers: downloadHeaders(hiddenUrl) }), content)).toBe(false);
+    expect(await serves(await fetch(url, { headers: downloadHeaders(url) }), await nuxeo.downloadFile(own))).toBe(false);
   });
 
-  test('only GET is allowed', async () => {
-    expect((await fetch(downloadUrl, { method: 'POST', headers: downloadHeaders(downloadUrl) })).status).toBe(405);
+  test('only GET is served', async () => {
+    expect((await fetch(downloadUrl, { method: 'POST', headers: downloadHeaders(downloadUrl) })).status).toBe(401);
   });
 });
 
 test.describe('the test file of the connection check', () => {
+  // Its link is made by the settings validation and handed only to Document Server; the connection
+  // checks (tests/shared-settings) cover that it is served through that link
   const TEST_TXT = '/nuxeo/api/v1/onlyoffice/test-txt';
 
-  test('is served to the administrator with the JWT of Document Server', async ({ nuxeo }) => {
+  test('is not served without its link, even to an administrator', async ({ nuxeo }) => {
     const url = `${nuxeo.baseUrl}${TEST_TXT}`;
-    const response = await fetch(url, {
-      headers: { ...downloadHeaders(url), 'X-Authentication-Token': await tokenOf(nuxeo.baseUrl, nuxeo.defaultUser) },
-    });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe('Test file for conversion');
+    const nuxeoToken = { 'X-Authentication-Token': await tokenOf(nuxeo.baseUrl, nuxeo.defaultUser) };
+    const basic = Buffer.from(`${nuxeo.defaultUser.username}:${nuxeo.defaultUser.password}`).toString('base64');
+
+    expect((await fetch(url, { headers: { ...downloadHeaders(url), ...nuxeoToken } })).status, 'Nuxeo token').toBe(401);
+    expect((await fetch(url, { headers: { Authorization: `Basic ${basic}` } })).status, 'Basic').toBe(401);
   });
 
-  test('needs the JWT, and one for downloading', async ({ nuxeo }) => {
-    const url = `${nuxeo.baseUrl}${TEST_TXT}`;
-    const auth = { 'X-Authentication-Token': await tokenOf(nuxeo.baseUrl, nuxeo.defaultUser) };
+  test('is not served with the link token of a document', async ({ createFile, nuxeo, page }) => {
+    const downloadUrl = (await editorConfigOf(page, (await createFile('docx')).id)).document.url;
+    const url = `${nuxeo.baseUrl}${TEST_TXT}?token=${linkTokenOf(downloadUrl)}`;
 
-    expect((await fetch(url, { headers: auth })).status, 'without a JWT').toBe(401);
-    expect(
-      (await fetch(url, { headers: { ...auth, ...signedWith(url, { operation: 'callback' }) } })).status,
-      'a JWT for another operation',
-    ).toBe(401);
-  });
-
-  test('is closed to other users', async ({ nuxeo }) => {
-    const url = `${nuxeo.baseUrl}${TEST_TXT}`;
-    const basic = Buffer.from(`${nuxeo.secondUser.username}:${nuxeo.secondUser.password}`).toString('base64');
-
-    expect((await fetch(url, { headers: { Authorization: `Basic ${basic}` } })).status).toBe(403);
+    expect((await fetch(url, { headers: downloadHeaders(url) })).status).toBe(401);
   });
 });
 
 /**
- * A Nuxeo authentication token of the user, as the package puts one into the links it hands
- * Document Server — Basic auth would take the Authorization header the JWT travels in.
+ * A Nuxeo authentication token of the user, as earlier versions of the package put into the links
+ * they handed Document Server — Basic auth would take the Authorization header the JWT travels in.
  */
 async function tokenOf(baseUrl: string, user: TestUser): Promise<string> {
   const basic = Buffer.from(`${user.username}:${user.password}`).toString('base64');
