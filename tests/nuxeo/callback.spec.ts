@@ -148,10 +148,6 @@ test.describe('callback', () => {
   });
 
   test('requests Document Server would not send are refused, not failed on', async () => {
-    // Known bug: the package parses the body before its error handling and dereferences the
-    // callback without checking it, so each of these is a 500 — which Document Server retries —
-    // with the exception text of the server in it.
-    test.fail();
     const { secret, header } = documentServer();
     const body = { key: config.document.key, status: 4 };
     const cases: [string, string, Record<string, string>][] = [
