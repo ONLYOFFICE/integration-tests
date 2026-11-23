@@ -120,6 +120,10 @@ export class EditorPage {
     if (!(await this.canEdit())) {
       return;
     }
+    // The spreadsheet editor keeps the text in the cell being edited and reports no change until the cell is committed
+    if ((await this.config()).documentType === 'cell') {
+      await this.page.keyboard.press('Enter');
+    }
     await this.page
       .waitForFunction(
         (count) => {
