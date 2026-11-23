@@ -1,4 +1,4 @@
-import { NuxeoSettings, readSettings, saveSettings } from '@adapters/nuxeo';
+import { NuxeoSettings, readSettings, saveSettings, SETTINGS_PATH } from '@adapters/nuxeo';
 import { documentServer } from '@core';
 import { editorConfigOf, editorPath, expect, standExec, test } from '../nuxeo/fixtures';
 
@@ -69,6 +69,21 @@ test('settings with special characters are written so that Nuxeo reads them back
   // What a restart loads: the file the package keeps its settings in
   const stored = parseProperties(exec!('cat', '/opt/nuxeo/server/nxserver/config/onlyoffice.properties'));
   expect(stored['onlyoffice.security.key']).toBe(secret);
+});
+
+test('the data the settings page gets along with the settings is not stored as a setting', async ({ page }) => {
+  const exec = standExec();
+  test.skip(!exec, 'reading the settings file needs the container of a stand the tests started');
+
+  // The page posts back the whole object it read, extra (the api.js path) included
+  const settings = await readSettings(page);
+  expect(settings.extra).toBeTruthy();
+  const response = await page.request.post(SETTINGS_PATH, { data: settings });
+  expect(response.ok()).toBe(true);
+
+  const stored = parseProperties(exec!('cat', '/opt/nuxeo/server/nxserver/config/onlyoffice.properties'));
+  expect(stored['onlyoffice.url']).toBe(settings.url);
+  expect(Object.keys(stored).filter((key) => key.startsWith('onlyoffice.extra'))).toEqual([]);
 });
 
 /** java.util.Properties.load() for the lines Properties.store() writes: no continuations, escapes in keys and values */
