@@ -1,5 +1,6 @@
 import * as alfresco from './alfresco';
 import * as confluence from './confluence';
+import * as drupal from './drupal';
 import * as jira from './jira';
 import * as liferay from './liferay';
 import * as mattermost from './mattermost';
@@ -11,7 +12,7 @@ export interface SystemStand {
   teardown(): void;
 }
 
-const SYSTEMS: Record<string, SystemStand> = { alfresco, confluence, jira, liferay, mattermost, nuxeo };
+const SYSTEMS: Record<string, SystemStand> = { alfresco, confluence, drupal, jira, liferay, mattermost, nuxeo };
 
 /**
  * Systems the tests are actually running against — from --project=<name> in the

@@ -13,6 +13,7 @@ packages/
   core/                # shared foundation: types, fixtures, EditorPage, verify/extractText
   adapter-alfresco/    # HostAdapter implementation for Alfresco (Share + REST API v1)
   adapter-confluence/  # HostAdapter implementation for Confluence
+  adapter-drupal/      # HostAdapter implementation for Drupal (Media + JSON:API)
   adapter-jira/        # HostAdapter implementation for Jira
   adapter-liferay/     # HostAdapter implementation for Liferay
 tests/
@@ -23,7 +24,8 @@ tests/
   setup/registry.ts    # maps --project=<system> to the right setup/teardown
   shared/              # cross-platform scenarios (run in every project)
   shared-settings/     # serial scenarios that change the plugin's connection settings
-  alfresco/, confluence/, jira/, liferay/   # system-specific scenarios
+  alfresco/, confluence/, drupal/, jira/, liferay/   # system-specific scenarios
+  drupal-settings/     # serial system-specific scenarios that change the plugin's settings
 environments/          # stacks, one directory per system (alfresco/, confluence/, jira/, liferay/)
 ```
 
