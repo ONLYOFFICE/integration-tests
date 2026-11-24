@@ -1,5 +1,16 @@
 import { Page } from '@playwright/test';
-import { FileRef, FileType, HostAdapter, LegacyFileType, loadConvertTemplate, loadTemplate, TestUser } from '@core';
+import {
+  ConnectionCheck,
+  ConnectionSettings,
+  DocsConnection,
+  FileRef,
+  FileType,
+  HostAdapter,
+  LegacyFileType,
+  loadConvertTemplate,
+  loadTemplate,
+  TestUser,
+} from '@core';
 import { NUXEO_CONTEXT, NuxeoApi } from './nuxeo.api';
 
 export interface NuxeoOptions {
@@ -22,6 +33,80 @@ const CONVERT_TARGETS: Record<LegacyFileType, FileType> = { odt: 'docx', ods: 'x
 /** Editor document types the plugin's ONLYOFFICE.Create operation takes, per file type it produces */
 const CREATE_TYPES: Record<FileType, 'word' | 'cell' | 'slide'> = { docx: 'word', xlsx: 'cell', pptx: 'slide' };
 
+/** The package's settings endpoint (Administrator only) — what its Web UI settings page loads and saves */
+export const SETTINGS_PATH = `${NUXEO_CONTEXT}/api/v1/onlyoffice/settings`;
+
+export interface NuxeoSettings {
+  url: string;
+  innerUrl?: string;
+  productInnerUrl?: string;
+  security?: { key?: string; header?: string; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+/** Each connection check the package runs on saving its settings, by name */
+export type ValidationResults = Record<string, { status?: string; error?: unknown }>;
+
+export async function readSettings(page: Page): Promise<NuxeoSettings> {
+  const response = await page.request.get(SETTINGS_PATH);
+  if (!response.ok()) {
+    throw new Error(`[nuxeo] GET ${SETTINGS_PATH}: ${response.status()} ${await response.text()}`);
+  }
+  return (await response.json()) as NuxeoSettings;
+}
+
+/**
+ * What to post to change `changes` over the `current` settings, as the settings page does: it
+ * posts the whole form. `extra` is what the endpoint adds for the page to read (the api.js path),
+ * not a setting — posted back, it would be stored as one.
+ */
+export function mergeSettings(current: NuxeoSettings, changes: Partial<NuxeoSettings>): NuxeoSettings {
+  const { extra: _extra, ...settings } = current;
+  return {
+    ...settings,
+    ...changes,
+    security: { ...(settings.security ?? {}), ...(changes.security ?? {}) },
+  };
+}
+
+export async function saveSettings(page: Page, changes: Partial<NuxeoSettings>): Promise<ValidationResults> {
+  const settings = mergeSettings(await readSettings(page), changes);
+  const response = await page.request.post(SETTINGS_PATH, { data: settings });
+  if (!response.ok()) {
+    throw new Error(`[nuxeo] POST ${SETTINGS_PATH}: ${response.status()} ${await response.text()}`);
+  }
+  return (((await response.json()) as { validationResults?: ValidationResults }).validationResults ?? {}) as ValidationResults;
+}
+
+export function failedChecks(results: ValidationResults): string[] {
+  return Object.entries(results)
+    .filter(([, result]) => String(result?.status).toLowerCase() !== 'success')
+    .map(([name]) => name);
+}
+
+class NuxeoConnectionSettings implements ConnectionSettings {
+  async read(page: Page): Promise<DocsConnection> {
+    const settings = await readSettings(page);
+    return {
+      url: settings.url,
+      secret: settings.security?.key ?? '',
+      header: settings.security?.header || 'Authorization',
+    };
+  }
+
+  async write(page: Page, connection: DocsConnection): Promise<ConnectionCheck> {
+    const results = await saveSettings(page, {
+      url: connection.url,
+      security: { key: connection.secret, header: connection.header },
+    });
+    const failed = failedChecks(results);
+    return {
+      ok: Object.keys(results).length > 0 && failed.length === 0,
+      message: failed.length ? `failed: ${failed.join(', ')} — ${JSON.stringify(results)}` : JSON.stringify(results),
+    };
+  }
+}
+
 function uniqueName(): string {
   return `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -32,8 +117,9 @@ export class NuxeoAdapter implements HostAdapter {
   readonly defaultUser: TestUser;
   readonly secondUser: TestUser;
   readonly readOnlyUser: TestUser;
+  readonly connectionSettings = new NuxeoConnectionSettings();
 
-  private readonly api: NuxeoApi;
+  readonly api: NuxeoApi;
 
   constructor(options: NuxeoOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -41,6 +127,11 @@ export class NuxeoAdapter implements HostAdapter {
     this.secondUser = options.secondUser;
     this.readOnlyUser = options.readOnlyUser;
     this.api = new NuxeoApi(this.baseUrl, options.admin);
+  }
+
+  /** The REST client acting as another user — e.g. to lock a document as that user */
+  apiAs(user: TestUser): NuxeoApi {
+    return new NuxeoApi(this.baseUrl, user);
   }
 
   /**
