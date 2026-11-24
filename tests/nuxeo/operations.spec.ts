@@ -22,7 +22,7 @@ test('created documents get the extension and mime type of their type', async ({
     ['slide', 'pptx'],
     ['pdf', 'pdf'],
   ] as const) {
-    const title = uniqueName(type).replace(/\.\w+$/, '');
+    const title = uniqueName();
     const uid = await nuxeo.api.createViaPlugin(title, type);
     deleteAfter(uid);
 
@@ -49,7 +49,7 @@ test('a user who may only read the folder cannot create documents in it', async 
   const api = nuxeo.apiAs(nuxeo.readOnlyUser);
 
   await expect(
-    api.operation('ONLYOFFICE.Create', { path: WORKSPACE_PATH, title: uniqueName('docx'), type: 'word', language: 'en' }),
+    api.operation('ONLYOFFICE.Create', { path: WORKSPACE_PATH, title: uniqueName(), type: 'word', language: 'en' }),
   ).rejects.toThrow(/: 403 /);
 });
 

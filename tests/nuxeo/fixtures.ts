@@ -70,8 +70,9 @@ export const test = base.extend<NuxeoFixtures>({
 
 export { expect } from '../fixtures';
 
-export function uniqueName(extension: string): string {
-  return `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+export function uniqueName(extension?: string): string {
+  const name = `autotest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return extension ? `${name}.${extension}` : name;
 }
 
 export function editorPath(uid: string): string {
