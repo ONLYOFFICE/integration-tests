@@ -44,11 +44,11 @@ test.describe('download', () => {
 
   test('an expired JWT is refused', async () => {
     const response = await fetch(downloadUrl, { headers: downloadHeaders(downloadUrl, undefined, { expiresIn: -600 }) });
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   test('a JWT for another operation is refused, one for downloading is accepted', async () => {
-    expect((await fetch(downloadUrl, { headers: signedWith(downloadUrl, { operation: 'callback' }) })).status).toBe(403);
+    expect((await fetch(downloadUrl, { headers: signedWith(downloadUrl, { operation: 'callback' }) })).status).toBe(401);
     expect(await serves(await fetch(downloadUrl, { headers: signedWith(downloadUrl, { operation: 'download' }) }), content)).toBe(
       true,
     );
