@@ -147,6 +147,25 @@ export class NuxeoApi {
    * the new document's file:content. `title` defaults to the file name.
    */
   async uploadDocument(name: string, content: Buffer, options: { title?: string } = {}): Promise<NuxeoDocument> {
+    const response = await this.json(
+      `/path${WORKSPACE_PATH}`,
+      'POST',
+      {
+        'entity-type': 'document',
+        name: name.replace(/[^\w.-]/g, '-'),
+        type: 'File',
+        properties: {
+          'dc:title': options.title ?? name,
+          'file:content': await this.uploadBlob(name, content),
+        },
+      },
+      DOCUMENT_HEADERS,
+    );
+    return this.toDocument((await response.json()) as RawDocument);
+  }
+
+  /** Uploads the bytes into a new batch — the returned reference is what a blob property is set to */
+  private async uploadBlob(name: string, content: Buffer): Promise<{ 'upload-batch': string; 'upload-fileId': string }> {
     const { batchId } = (await (await this.request('/upload/', { method: 'POST' })).json()) as { batchId: string };
     await this.request(`/upload/${batchId}/0`, {
       method: 'POST',
@@ -158,21 +177,21 @@ export class NuxeoApi {
       },
       body: new Uint8Array(content),
     });
-    const response = await this.json(
-      `/path${WORKSPACE_PATH}`,
-      'POST',
-      {
-        'entity-type': 'document',
-        name: name.replace(/[^\w.-]/g, '-'),
-        type: 'File',
-        properties: {
-          'dc:title': options.title ?? name,
-          'file:content': { 'upload-batch': batchId, 'upload-fileId': '0' },
-        },
-      },
-      DOCUMENT_HEADERS,
-    );
-    return this.toDocument((await response.json()) as RawDocument);
+    return { 'upload-batch': batchId, 'upload-fileId': '0' };
+  }
+
+  /** Adds a file to the document's attachments (files:files), next to its main file */
+  async attachFile(uid: string, name: string, content: Buffer): Promise<void> {
+    await this.json(`/id/${uid}`, 'PUT', {
+      'entity-type': 'document',
+      properties: { 'files:files': [{ file: await this.uploadBlob(name, content) }] },
+    });
+  }
+
+  /** Checks in a minor version of the document; returns the version's uid */
+  async createVersion(uid: string): Promise<string> {
+    const version = (await this.operation('Document.CreateVersion', { increment: 'Minor' }, uid)) as { uid: string };
+    return version.uid;
   }
 
   async createEmptyFile(name: string): Promise<NuxeoDocument> {

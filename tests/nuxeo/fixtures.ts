@@ -3,6 +3,7 @@ import { BrowserContext, Page } from '@playwright/test';
 import { CAPTURE_EDITOR_CONFIG, convertWithDocumentServer, EditorConfig, TestUser, waitForEditorConfig } from '@core';
 import { EDITOR_PATH, NuxeoAdapter, NuxeoDocument } from '@adapters/nuxeo';
 import { test as base } from '../fixtures';
+import { NuxeoWebUi } from './web-ui';
 
 interface NuxeoFixtures {
   nuxeo: NuxeoAdapter;
@@ -18,6 +19,8 @@ interface NuxeoFixtures {
    * editor config like the openEditor fixtures do.
    */
   pageAs: (user: TestUser | null, options?: { locale?: string }) => Promise<Page>;
+  /** Nuxeo Web UI on the default page */
+  webUi: NuxeoWebUi;
 }
 
 export const test = base.extend<NuxeoFixtures>({
@@ -66,6 +69,8 @@ export const test = base.extend<NuxeoFixtures>({
       await context.close();
     }
   },
+
+  webUi: async ({ page }, use) => use(new NuxeoWebUi(page)),
 });
 
 export { expect } from '../fixtures';
