@@ -62,29 +62,29 @@ test('saving posts the form and reports success when every check passes', async 
   expect(posted[0]).toMatchObject({ url: stored.url });
 });
 
-// Review 3.3: the success toast is shown unconditionally, right over the failure
-test('a failed check is reported without claiming success', async ({ page, webUi }) => {
-  test.fail();
+// The settings are saved whatever the checks say: the page shows that they are, and on screen at
+// the same time, in a toast of its own, which check failed
+test('a failed check is reported along with the saved settings', async ({ page, webUi }) => {
   await answerSaves(page, { ...ALL_PASSED, commandService: { status: 'failed', error: 'TOKEN' } });
+  await webUi.openSettings();
+
+  await webUi.settingsSaveButton.click();
+
+  const messages = ['Error when trying to check CommandService (Invalid token).', 'Settings were successfully saved'];
+  await expect.poll(() => webUi.notifications()).toEqual(messages);
+  await expect.poll(async () => (await webUi.openToasts()).sort()).toEqual([...messages].sort());
+});
+
+// Review 3.3: a check failed with an error code the SDK doesn't know comes without `error`
+test('a check failed with an unknown error does not turn into an error of saving', async ({ page, webUi }) => {
+  await answerSaves(page, { ...ALL_PASSED, commandService: { status: 'failed' } });
   await webUi.openSettings();
 
   await webUi.settingsSaveButton.click();
 
   await expect
     .poll(() => webUi.notifications())
-    .toEqual(['Error when trying to check CommandService (Invalid token).']);
-});
-
-// Review 3.3: a check failed with an error code the package doesn't know comes without `error`
-test('a check failed with an unknown error does not turn into an error of saving', async ({ page, webUi }) => {
-  test.fail();
-  await answerSaves(page, { ...ALL_PASSED, commandService: { status: 'failed' } });
-  await webUi.openSettings();
-
-  await webUi.settingsSaveButton.click();
-
-  await expect.poll(() => webUi.notifications()).not.toEqual([]);
-  expect(await webUi.notifications()).not.toContainEqual(expect.stringContaining('An error occurred while saving the settings'));
+    .toEqual(['Error when trying to check CommandService (Unknown error).', 'Settings were successfully saved']);
 });
 
 // Review 5.3: Save isn't disabled while saving

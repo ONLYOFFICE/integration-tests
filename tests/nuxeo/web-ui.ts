@@ -14,8 +14,9 @@ import { WORKSPACE_PATH } from '@adapters/nuxeo';
 const AUTOMATION_READY = 'window.automationReady = true;';
 
 /**
- * Records every message the page asks Web UI to show as a toast. A later toast replaces an earlier
- * one on screen, so the screen alone can't tell whether a message was shown and then covered.
+ * Records every message the page asks Web UI to show as a toast. Web UI opens a toast of its own for
+ * each commandId and stacks them, but closes each after a few seconds, so the screen alone can't
+ * tell whether a message was shown once it closed.
  */
 const RECORD_NOTIFICATIONS = `
   window.__notifications = [];
@@ -124,6 +125,18 @@ export class NuxeoWebUi {
     const dialog = this.page.locator('onlyoffice-create');
     await dialog.locator('nuxeo-input#title input').waitFor();
     return dialog;
+  }
+
+  /** The messages of the toasts open on screen now, one per commandId the page notified with */
+  async openToasts(): Promise<string[]> {
+    return this.page
+      .locator('mwc-snackbar')
+      .evaluateAll((toasts) =>
+        toasts
+          .map((toast) => toast as unknown as { open: boolean; labelText: string })
+          .filter((toast) => toast.open)
+          .map((toast) => toast.labelText),
+      );
   }
 
   /** Every message shown as a toast since the page loaded, in order */
