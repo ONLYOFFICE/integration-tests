@@ -82,7 +82,6 @@ test('a failed request is reported as an undefined error', async ({ createDocume
 
 // Review 3.4: the dialog closed with Esc keeps polling and opens itself again once it ends
 test('closing the dialog with Esc while converting stops the conversion', async ({ createDocument, page, webUi }) => {
-  test.fail();
   const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
   await page.route(CONVERT_OPERATION, (route) => route.fulfill(operationString({ endConvert: false, percent: 10 })));
   const sent = webUi.recordConvertRequests();
@@ -102,7 +101,6 @@ test('closing the dialog with Esc while converting stops the conversion', async 
 // again aborts that request, whose failure handler then reports an error and stops the new
 // conversion too; were the request answered instead, both polling chains would go on at once.
 test('converting again right after cancelling goes on as one conversion', async ({ createDocument, page, webUi }) => {
-  test.fail();
   const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
   await page.route(CONVERT_OPERATION, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -122,4 +120,46 @@ test('converting again right after cancelling goes on as one conversion', async 
   expect(await webUi.notifications(), 'messages').toEqual([]);
   expect(await webUi.isConvertDialogOpen(), 'the dialog of the conversion is open').toBe(true);
   expect(sent.count, 'the conversion keeps asking').toBeGreaterThan(restartedWith + 1);
+});
+
+// Review 3.4: the dialog closed with Esc went on polling, and the end of the conversion toggled it open again
+test('the dialog closed with Esc does not open again when the conversion ends', async ({ createDocument, page, webUi }) => {
+  const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
+  let answered = 0;
+  await page.route(CONVERT_OPERATION, (route) =>
+    route.fulfill(operationString(answered++ === 0 ? { endConvert: false, percent: 10 } : { endConvert: true, percent: 100 })),
+  );
+  const sent = webUi.recordConvertRequests();
+  await webUi.openDocument(odt.uid);
+
+  await startConversion(webUi);
+  await expect.poll(() => sent.count).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => webUi.isConvertDialogOpen()).toBe(false);
+  await page.waitForTimeout(3_000);
+
+  expect(await webUi.isConvertDialogOpen(), 'the dialog of the conversion is open').toBe(false);
+  expect(await webUi.notifications(), 'messages').toEqual([]);
+});
+
+// Review 3.4: a conversion Document Server never finishes was polled every second for ever
+test('a conversion that does not end in time is reported and no longer polled', async ({ createDocument, page, webUi }) => {
+  const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
+  await page.route(CONVERT_OPERATION, (route) => route.fulfill(operationString({ endConvert: false, percent: 10 })));
+  const sent = webUi.recordConvertRequests();
+  await webUi.openDocument(odt.uid);
+  // the default is minutes; the element's property is the way to shorten it
+  await webUi.page
+    .locator('nuxeo-document-viewer onlyoffice-convert-button')
+    .evaluate((button) => ((button as unknown as { pollingTimeout: number }).pollingTimeout = 2_000));
+
+  await startConversion(webUi);
+
+  await expect
+    .poll(() => webUi.notifications(), { timeout: 15_000 })
+    .toEqual(['Failed to convert document, Document Conversion Service returned error (Conversion timeout error)']);
+  expect(await webUi.isConvertDialogOpen()).toBe(false);
+  const sentAtTheEnd = sent.count;
+  await page.waitForTimeout(3_000);
+  expect(sent.count, 'requests after the conversion was given up').toBe(sentAtTheEnd);
 });
