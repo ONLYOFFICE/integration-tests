@@ -91,7 +91,7 @@ jobs:
             echo "| System | \`${{ inputs.system }}\` |"
             echo "| Document Server | \`$DOCUMENTSERVER_IMAGE\` |"
             echo "| integration-tests | \`$(git rev-parse --short HEAD)\` |"
-            echo "| Plugin | \`$(ls -m "environments/${{ inputs.system }}/artifacts")\` |"
+            echo "| Plugin | \`$(ls -m --ignore=README.md "environments/${{ inputs.system }}/artifacts")\` |"
             if [ -n "$ENV_OVERRIDES" ]; then
               echo "| Stand env | \`$(printf '%s' "$ENV_OVERRIDES" | tr '\n' ' ')\` |"
             fi
