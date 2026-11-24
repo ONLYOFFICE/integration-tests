@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { failedChecks, NuxeoApi, ValidationResults, WORKSPACE_PATH } from '@adapters/nuxeo';
+import { failedChecks, mergeSettings, NuxeoApi, NuxeoSettings, ValidationResults, WORKSPACE_PATH } from '@adapters/nuxeo';
 import { stackFor } from '../stack';
 import type { DocumentServer } from './document-server';
 
@@ -205,17 +205,8 @@ async function saveSettings(api: NuxeoApi, settings: unknown): Promise<{ body: R
  */
 async function configureDocumentServer(api: NuxeoApi, ds: DocumentServer): Promise<void> {
   console.log('[nuxeo] Configuring the package to use the Document Server...');
-  // `extra` is what the endpoint adds for the settings page to read (the api.js path), not a
-  // setting — posted back, it would be stored as one
-  const { extra: _extra, ...current } = (await (await api.request('/onlyoffice/settings')).json()) as {
-    security?: Record<string, unknown>;
-    [key: string]: unknown;
-  };
-  const settings = {
-    ...current,
-    url: ds.url,
-    security: { ...(current.security ?? {}), key: ds.secret, header: ds.header },
-  };
+  const current = (await (await api.request('/onlyoffice/settings')).json()) as NuxeoSettings;
+  const settings = mergeSettings(current, { url: ds.url, security: { key: ds.secret, header: ds.header } });
 
   let { body, results } = await saveSettings(api, settings);
   let failed = failedChecks(results);

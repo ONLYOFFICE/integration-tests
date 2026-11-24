@@ -56,16 +56,21 @@ export async function readSettings(page: Page): Promise<NuxeoSettings> {
 }
 
 /**
- * Saves `changes` over the current settings, as the settings page does: it posts the whole form.
- * `extra` is what the endpoint adds for the page to read (the api.js path), not a setting.
+ * What to post to change `changes` over the `current` settings, as the settings page does: it
+ * posts the whole form. `extra` is what the endpoint adds for the page to read (the api.js path),
+ * not a setting — posted back, it would be stored as one.
  */
-export async function saveSettings(page: Page, changes: Partial<NuxeoSettings>): Promise<ValidationResults> {
-  const { extra: _extra, ...current } = await readSettings(page);
-  const settings = {
-    ...current,
+export function mergeSettings(current: NuxeoSettings, changes: Partial<NuxeoSettings>): NuxeoSettings {
+  const { extra: _extra, ...settings } = current;
+  return {
+    ...settings,
     ...changes,
-    security: { ...(current.security ?? {}), ...(changes.security ?? {}) },
+    security: { ...(settings.security ?? {}), ...(changes.security ?? {}) },
   };
+}
+
+export async function saveSettings(page: Page, changes: Partial<NuxeoSettings>): Promise<ValidationResults> {
+  const settings = mergeSettings(await readSettings(page), changes);
   const response = await page.request.post(SETTINGS_PATH, { data: settings });
   if (!response.ok()) {
     throw new Error(`[nuxeo] POST ${SETTINGS_PATH}: ${response.status()} ${await response.text()}`);
