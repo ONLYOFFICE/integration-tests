@@ -66,7 +66,6 @@ test('Create waits for a type to be chosen', async ({ webUi }) => {
 
 // Review 5.3: the form's Enter handler (_submitKeyHandler) doesn't exist
 test('Enter in the title creates the document', async ({ deleteAfter, page, webUi }) => {
-  test.fail();
   await webUi.openWorkspace();
   const dialog = await webUi.openCreateDialog();
 
@@ -78,7 +77,6 @@ test('Enter in the title creates the document', async ({ deleteAfter, page, webU
 
 // Review 5.3: "report.docx" becomes "report.docx.docx"
 test('a title with the extension of its type does not get it twice', async ({ deleteAfter, nuxeo, page, webUi }) => {
-  test.fail();
   const name = `${uniqueName()}.docx`;
   await webUi.openWorkspace();
   const dialog = await webUi.openCreateDialog();
@@ -94,7 +92,6 @@ test('a title with the extension of its type does not get it twice', async ({ de
 
 // Review 5.3: `required` takes spaces for a title
 test('a title of spaces only is not accepted', async ({ page, webUi }) => {
-  test.fail();
   const asked: string[] = [];
   page.on('request', (request) => {
     if (request.url().endsWith('/automation/ONLYOFFICE.Create')) {
@@ -113,7 +110,6 @@ test('a title of spaces only is not accepted', async ({ page, webUi }) => {
 
 // Review 5.3: the server's reason is replaced by a generic message
 test('the reason the server refused to create the document is shown', async ({ page, webUi }) => {
-  test.fail();
   const reason = 'A document with this name cannot be created here';
   await page.route(CREATE_OPERATION, (route) =>
     route.fulfill({ status: 400, json: { 'entity-type': 'exception', status: 400, message: reason } }),
