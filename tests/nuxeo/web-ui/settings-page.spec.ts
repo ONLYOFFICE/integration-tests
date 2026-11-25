@@ -89,7 +89,6 @@ test('a check failed with an unknown error does not turn into an error of saving
 
 // Review 5.3: Save isn't disabled while saving
 test('a double click on Save saves once', async ({ page, webUi }) => {
-  test.fail();
   const posted = await answerSaves(page, ALL_PASSED);
   await webUi.openSettings();
 
@@ -102,7 +101,6 @@ test('a double click on Save saves once', async ({ page, webUi }) => {
 
 // Review 5.3: a settings page that failed to load throws on Save and says nothing
 test('settings that failed to load are reported', async ({ page, webUi }) => {
-  test.fail();
   const errors: Error[] = [];
   page.on('pageerror', (error) => errors.push(error));
   await page.route(SETTINGS, (route) =>
@@ -113,4 +111,16 @@ test('settings that failed to load are reported', async ({ page, webUi }) => {
   await expect.poll(() => webUi.notifications()).not.toEqual([]);
   await webUi.settingsSaveButton.click();
   expect(errors.map((error) => error.message)).toEqual([]);
+});
+
+// Review 5.3: an address without a scheme was saved, and the browser took it as relative to Nuxeo
+test('an address without http:// or https:// is not saved', async ({ page, webUi }) => {
+  const posted = await answerSaves(page, ALL_PASSED);
+  await webUi.openSettings();
+
+  await webUi.settingsInput('doc-url').fill('docs.example.com/');
+  await webUi.settingsSaveButton.click();
+
+  await expect.poll(() => webUi.notifications()).toEqual(['Addresses must start with http:// or https://']);
+  expect(posted).toEqual([]);
 });
