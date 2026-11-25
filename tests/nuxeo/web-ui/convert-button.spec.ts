@@ -213,3 +213,22 @@ test('a conversion started while the dialog of the previous one is closing goes 
   expect(await webUi.isConvertDialogOpen(), 'the dialog of the conversion is open').toBe(true);
   expect(sent.count, 'the conversion keeps asking').toBeGreaterThan(restartedWith + 1);
 });
+
+// Review 5.3: every convert button (one per file of the document) asked for the formats again
+test('the formats are asked once for a document with attachments', async ({ createDocument, nuxeo, page, webUi }) => {
+  const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
+  await nuxeo.api.attachFile(odt.uid, 'attachment.odt', loadConvertTemplate('odt'));
+  const asked: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/onlyoffice/formats')) {
+      asked.push(request.url());
+    }
+  });
+
+  await webUi.openDocument(odt.uid);
+  await expect(webUi.convertAction).toBeVisible();
+  await expect(page.locator('nuxeo-document-attachments onlyoffice-convert-button')).toHaveCount(1);
+  await page.waitForTimeout(2_000);
+
+  expect(asked).toHaveLength(1);
+});

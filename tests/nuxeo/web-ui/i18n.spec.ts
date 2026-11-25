@@ -69,9 +69,8 @@ test('every translation of the package is installed with every message', async (
   expect(await missingKeys(page, PACKAGE_LANGUAGES)).toEqual({});
 });
 
-// Found along with these tests: a browser in one of these languages shows message keys
+// Found along with these tests: a browser in one of these languages showed message keys
 test('the languages Web UI has and the package does not translate still get its messages', async ({ page }) => {
-  test.fail();
   expect(await missingKeys(page, WEB_UI_ONLY_LANGUAGES)).toEqual({});
 });
 
