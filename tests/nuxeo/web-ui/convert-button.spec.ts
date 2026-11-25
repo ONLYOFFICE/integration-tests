@@ -163,3 +163,21 @@ test('a conversion that does not end in time is reported and no longer polled', 
   await page.waitForTimeout(3_000);
   expect(sent.count, 'requests after the conversion was given up').toBe(sentAtTheEnd);
 });
+
+// Review 3.4: the time limit was checked on each answer, so a status request that hung was waited for ever
+test('a conversion whose status request never answers is given up in time', async ({ createDocument, page, webUi }) => {
+  const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
+  await page.route(CONVERT_OPERATION, () => new Promise<void>(() => {}));
+  await webUi.openDocument(odt.uid);
+  await webUi.page
+    .locator('nuxeo-document-viewer onlyoffice-convert-button')
+    .evaluate((button) => ((button as unknown as { pollingTimeout: number }).pollingTimeout = 2_000));
+
+  await startConversion(webUi);
+
+  await expect
+    .poll(() => webUi.notifications(), { timeout: 15_000 })
+    .toEqual(['Failed to convert document, Document Conversion Service returned error (Conversion timeout error)']);
+  expect(await webUi.isConvertDialogOpen()).toBe(false);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
