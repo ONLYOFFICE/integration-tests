@@ -63,7 +63,6 @@ test('going to another document does not show the action of the previous one', a
   page,
   webUi,
 }) => {
-  test.fail();
   const docx = await createFile('docx');
   const unknown = await createDocument(uniqueName('xyz'), Buffer.from('not a document'));
   await webUi.openDocument(docx.id);
@@ -83,4 +82,19 @@ test('going to another document does not show the action of the previous one', a
   } finally {
     release();
   }
+});
+
+// Review 5.3: a failed answer for the new document left the action of the previous one
+test('a document whose capabilities cannot be read gets no action', async ({ createFile, page, webUi }) => {
+  const editable = await createFile('docx');
+  const other = await createFile('docx');
+  await webUi.openDocument(editable.id);
+  await expect(webUi.editorActionLabel).toHaveText('Edit in ONLYOFFICE');
+
+  await page.route(`**/onlyoffice/filter/${other.id}`, (route) => route.fulfill({ status: 500, json: {} }));
+  const answered = page.waitForResponse(`**/onlyoffice/filter/${other.id}`);
+  await webUi.goto(`doc/${other.id}`);
+  await answered;
+
+  await expect(webUi.editorAction).toHaveCount(0);
 });
