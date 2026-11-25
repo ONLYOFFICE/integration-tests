@@ -16,6 +16,23 @@ test('the editor of a document that does not exist answers 404', async ({ page }
   expect((await page.goto(editorPath(randomUUID())))?.status()).toBe(404);
 });
 
+// Review 5.2: the editor took the file name of the document without checking it has a file
+test('the editor of a document without a file answers 404', async ({ nuxeo, page }) => {
+  const empty = await nuxeo.api.createEmptyFile(uniqueName('none'));
+  try {
+    expect((await page.goto(editorPath(empty.uid)))?.status()).toBe(404);
+  } finally {
+    await nuxeo.api.deleteDocument(empty.uid).catch(() => {});
+  }
+});
+
+// Review 5.2: the editor took the type of a format it does not open as known
+test('the editor of a file in a format the package does not open answers 404', async ({ createDocument, page }) => {
+  const unknown = await createDocument(uniqueName('xyz'), Buffer.from('not a document'));
+
+  expect((await page.goto(editorPath(unknown.uid)))?.status()).toBe(404);
+});
+
 test('the editor of a document the user may not see answers 403', async ({ createFile, nuxeo, pageAs }) => {
   const file = await createFile('docx');
   await nuxeo.restrictToReadOnly(file);
