@@ -189,9 +189,20 @@ export class NuxeoApi {
   }
 
   /** Checks in a minor version of the document; returns the version's uid */
+  /** Checks the document in as a new minor version; returns the uid of that version */
   async createVersion(uid: string): Promise<string> {
-    const version = (await this.operation('Document.CreateVersion', { increment: 'Minor' }, uid)) as { uid: string };
-    return version.uid;
+    // Document.CreateVersion answers with the live document, not with the version it created
+    await this.operation('Document.CreateVersion', { increment: 'Minor' }, uid);
+    const versions = (await this.operation('Document.GetVersions', {}, uid)) as {
+      entries: { uid: string; versionLabel: string }[];
+    };
+    const byLabel = (version: { versionLabel: string }) => version.versionLabel.split('.').map(Number);
+    const [latest] = [...versions.entries].sort((a, b) => {
+      const [aMajor, aMinor] = byLabel(a);
+      const [bMajor, bMinor] = byLabel(b);
+      return bMajor - aMajor || bMinor - aMinor;
+    });
+    return latest.uid;
   }
 
   async createEmptyFile(name: string): Promise<NuxeoDocument> {

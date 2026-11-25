@@ -49,7 +49,6 @@ test('the action opens the editor of the document in a new window', async ({ cre
 // Review 1.2: a version opens for editing, and saving it then fails. (The page of a trashed document
 // shows no document actions at all, so the package's action is not offered there either.)
 test('a version of a document is offered viewing only', async ({ createFile, nuxeo, webUi }) => {
-  test.fail();
   const file = await createFile('docx');
   const version = await nuxeo.api.createVersion(file.id);
 
