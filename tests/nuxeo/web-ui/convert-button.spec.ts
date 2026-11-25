@@ -181,3 +181,35 @@ test('a conversion whose status request never answers is given up in time', asyn
   expect(await webUi.isConvertDialogOpen()).toBe(false);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
+
+// Review 3.4: the dialog is closed when a conversion ends, and its iron-overlay-closed event, which stops
+// the polling, comes once the close is rendered. A conversion started before that must not be stopped by
+// it. No user is that fast, so the end of one conversion and the start of the next are done in one go
+test('a conversion started while the dialog of the previous one is closing goes on', async ({
+  createDocument,
+  page,
+  webUi,
+}) => {
+  const odt = await createDocument(uniqueName('odt'), loadConvertTemplate('odt'));
+  await page.route(CONVERT_OPERATION, (route) => route.fulfill(operationString({ endConvert: false, percent: 10 })));
+  const sent = webUi.recordConvertRequests();
+  await webUi.openDocument(odt.uid);
+  await startConversion(webUi);
+  await expect.poll(() => sent.count).toBeGreaterThan(0);
+
+  await page.locator('nuxeo-document-viewer onlyoffice-convert-button').evaluate((element) => {
+    const button = element as unknown as {
+      _finish(message: string): void;
+      _convert(): void;
+      $: { convertDialog: { open(): void } };
+    };
+    button._finish('the previous conversion ended');
+    button.$.convertDialog.open();
+    button._convert();
+  });
+  const restartedWith = sent.count;
+  await page.waitForTimeout(4_000);
+
+  expect(await webUi.isConvertDialogOpen(), 'the dialog of the conversion is open').toBe(true);
+  expect(sent.count, 'the conversion keeps asking').toBeGreaterThan(restartedWith + 1);
+});
